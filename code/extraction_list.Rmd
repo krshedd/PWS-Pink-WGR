@@ -1345,4 +1345,63 @@ Write it out for posterity
 readr::write_csv(x = extraction_spring, file = "../output/extraction_selection_PSPRIN14_PSPRIN15.csv")
 ```
 
+## Extraction Selection take 2 - 3/31/22
+
+Erin noted that several fish were missing from PSPRIN14.
+
+First, let's read in what we had asked for so we can avoid those.
+```{r}
+(extraction_spring <- readr::read_csv(file = "../output/extraction_selection_PSPRIN14_PSPRIN15.csv"))
+```
+
+Here are the sample numbers that Erin noted were missing, so we know what we need to replace.
+```{r}
+extraction_spring_missing_fish_ids <- c(51, 54, 55, 99, 101, 103, 172, 225, 231, 236, 237, 238)
+```
+
+Which sex?
+```{r}
+extraction_spring %>% 
+  dplyr::filter(silly == "PSPRIN14",
+                fish_id %in% extraction_spring_missing_fish_ids) %>% 
+  dplyr::count(silly, sex, otolith_mark_present)
+```
+
+Looks like we need to replace 6 fish from each sex.
+```{r}
+(
+  extraction_spring_v2 <- oceanak_spring %>%
+    dplyr::filter(!silly_source %in% extraction_spring$silly_source,
+                  silly == "PSPRIN14",
+                  otolith_mark_present == "NO",
+                  sex != "U") %>%
+    dplyr::group_by(silly, sex) %>%
+    dplyr::slice_sample(n = 6, replace = FALSE) %>%
+    dplyr::ungroup() %>% 
+    dplyr::arrange(silly, fish_id) %>% 
+    dplyr::select(
+      silly_source,
+      silly,
+      fish_id,
+      dwp_barcode,
+      dwp_well,
+      tissue_type,
+      sample_date,
+      sex,
+      otolith_mark_present
+    )
+)
+```
+
+Double check
+```{r}
+extraction_spring_v2 %>% 
+  dplyr::count(silly, sex, otolith_mark_present)
+```
+
+Write it out for posterity
+```{r}
+readr::write_csv(x = extraction_spring_v2, file = "../output/extraction_selection_PSPRIN14_v2.csv")
+```
+
 End...
