@@ -1345,7 +1345,7 @@ Write it out for posterity
 readr::write_csv(x = extraction_spring, file = "../output/extraction_selection_PSPRIN14_PSPRIN15.csv")
 ```
 
-## Extraction Selection take 2 - 3/31/22
+# Extraction Selection take 2 - 3/31/22
 
 Erin noted that several fish were missing from PSPRIN14.
 
@@ -1404,7 +1404,7 @@ Write it out for posterity
 readr::write_csv(x = extraction_spring_v2, file = "../output/extraction_selection_PSPRIN14_v2.csv")
 ```
 
-## Extraction Selection take 3 - 4/1/22
+# Extraction Selection take 3 - 4/1/22
 
 Erin noted that 3 of my replacement  fish were missing from PSPRIN14.
 
@@ -1466,5 +1466,274 @@ Write it out for posterity
 readr::write_csv(x = extraction_spring_v3, file = "../output/extraction_selection_PSPRIN14_v3.csv")
 ```
 
+# Extraction Selection take 4 PSTOCK16 - 4/5/22
+
+Erin noted that several fish were missing from PSTOCK16, likely both hatchery and wild.
+
+First, let's read in what we had asked for so we can avoid those.
+```{r}
+(
+  extraction_PSTOCK16_natural <-
+    readr::read_csv(file = "../output/extraction_PSTOCK16_natural.csv")
+)
+
+(extraction_PSTOCK16_hatchery <- readr::read_csv(file = "../output/extraction_selection_hatchery_stray.csv") %>%
+    dplyr::filter(silly == "PSTOCK16")
+)
+```
+
+Here are the sample numbers that Erin noted were missing, so we know what we need to replace.
+```{r}
+extraction_PSTOCK16_missing_fish_ids <- c(2671, 2680, 3067, 3977, 4020, 5154, 6793, 8667)
+```
+
+Which origin/sex?
+```{r}
+extraction_PSTOCK16_natural %>% 
+  dplyr::filter(fish_id %in% extraction_PSTOCK16_missing_fish_ids) %>% 
+  dplyr::count(silly, sex, otolith_mark_present)
+
+extraction_PSTOCK16_hatchery %>% 
+  dplyr::filter(fish_id %in% extraction_PSTOCK16_missing_fish_ids) %>% 
+  dplyr::count(silly, sex, otolith_mark_present, hatchery)
+```
+
+## Natural-origin Homing
+
+Looks like I need 3 natural-origin homing fish, 2 females and 1 male
+
+### Chose from N dyads
+
+Read in parentage data, filter out offspring that could be siblings or half-sibs (filter out `parent_id` for extraction selection).
+```{r}
+all_streams_parents_paired_14_16 <-
+  readr::read_csv(file = "../../PWS-Pink-Parentage/Stockdale_Hogan_Gilmour_Paddy_Erb/all_streams_parents_paired_14_16.csv") %>%
+  dplyr::rename(
+    silly = silly_off,
+    fish_id = fish_id_off,
+    dwp_barcode = dna_tray_code_off,
+    dwp_well = dna_tray_well_code_off,
+    sample_date = date_off,
+    sex = sex_off,
+    otolith_mark_present = otolith_mark_present_off
+  ) %>%
+  dplyr::mutate(tissue_type = "Heart-bulbus arteriosus") %>%
+  tidyr::unite(col = "silly_source",
+               c(silly, fish_id),
+               sep = "_",
+               remove = FALSE)
+
+# figure out which parents to avoid so we don't get full-sibs or half-sibs...that we know of
+parent_ids_to_avoid <- all_streams_parents_paired_14_16 %>% 
+  dplyr::filter(silly_source %in% extraction_PSTOCK16_natural$silly_source) %>% 
+  dplyr::pull(parent_id)
+
+# get two female offspring
+stockdale_2016_natural_selection_N_dyad_v2_female <-
+  all_streams_parents_paired_14_16  %>%
+  dplyr::filter(
+    stream_off == stream_par,
+    stream_off == "Stockdale",
+    origin_par == "Natural",
+    silly == "PSTOCK16",!(parent_id %in% parent_ids_to_avoid),
+    sex == "Female"
+  )  %>%
+  dplyr::group_by(sex) %>%
+  dplyr::slice_sample(n = 2, replace = FALSE) %>%
+  dplyr::ungroup() %>%
+  dplyr::arrange(silly, fish_id) %>%
+  dplyr::select(
+    silly_source,
+    silly,
+    fish_id,
+    dwp_barcode,
+    dwp_well,
+    tissue_type,
+    sample_date,
+    sex,
+    otolith_mark_present
+  )
+
+# get one male offspring
+stockdale_2016_natural_selection_N_dyad_v2_male <-
+  all_streams_parents_paired_14_16  %>%
+  dplyr::filter(
+    stream_off == stream_par,
+    stream_off == "Stockdale",
+    origin_par == "Natural",
+    silly == "PSTOCK16",!(parent_id %in% parent_ids_to_avoid),
+    sex == "Male"
+  )  %>%
+  dplyr::group_by(sex) %>%
+  dplyr::slice_sample(n = 1, replace = FALSE) %>%
+  dplyr::ungroup() %>%
+  dplyr::arrange(silly, fish_id) %>%
+  dplyr::select(
+    silly_source,
+    silly,
+    fish_id,
+    dwp_barcode,
+    dwp_well,
+    tissue_type,
+    sample_date,
+    sex,
+    otolith_mark_present
+  )
+
+
+(
+  stockdale_2016_natural_selection_N_dyad_v2 <- 
+    dplyr::bind_rows(stockdale_2016_natural_selection_N_dyad_v2_female, 
+                     stockdale_2016_natural_selection_N_dyad_v2_male) 
+)
+
+stockdale_2016_natural_selection_N_dyad_v2 %>%
+  dplyr::count(sex)
+```
+
+Write it out for posterity
+```{r}
+readr::write_csv(x = stockdale_2016_natural_selection_N_dyad_v2, file = "../output/extraction_PSTOCK16_natural_v2.csv")
+```
+
+## Hatchery-origin Strays
+
+Looks like I need 5 hatchery-origin strays, 3 females and 2 male, all from AFK
+
+Otolith read data lives here...
+```{r}
+(
+  oceanak_hatchery_og <-
+    readr::read_csv(file = "../data/Stockdale 2015-2016 Hogan 2015-2016 Spring 2014-2015 AHRP Salmon Biological Data 20220322_115608.csv")
+)
+```
+
+Modify, filter for silly codes of interest and tissue type "Otolith", and only AFK and WNH individuals
+```{r}
+(
+  oceanak_hatchery_PSTOCK16 <- oceanak_hatchery_og %>%
+    dplyr::filter(
+      SILLY_CODE == "PSTOCK16",
+      TISSUE_TYPE == "Heart-bulbus arteriosus",
+      OTOLITH_MARK_PRESENT == "YES",
+      SEX != "U"
+    ) %>%
+    dplyr::rename(
+      silly = SILLY_CODE,
+      fish_id = FISH_ID,
+      tissue_type = TISSUE_TYPE,
+      dwp_barcode = DNA_TRAY_CODE,
+      dwp_well = DNA_TRAY_WELL_CODE,
+      sample_date = SAMPLE_DATE,
+      sex = SEX,
+      otolith_mark_present = OTOLITH_MARK_PRESENT,
+      otolith_mark_id = OTOLITH_MARK_ID
+    ) %>%
+    dplyr::mutate(
+      sample_date = lubridate::ymd(sample_date),
+      hatchery = stringr::str_sub(
+        string = otolith_mark_id,
+        start = 1,
+        end = 3
+      )
+    ) %>%
+    dplyr::filter(hatchery %in% c("AFK", "WNH")) %>% 
+    tidyr::unite(
+      col = "silly_source",
+      c(silly, fish_id),
+      sep = "_",
+      remove = FALSE
+    ) %>%
+    dplyr::select(
+      silly_source,
+      silly,
+      fish_id,
+      dwp_barcode,
+      dwp_well,
+      tissue_type,
+      sample_date,
+      sex,
+      hatchery,
+      otolith_mark_present,
+      otolith_mark_id
+    )
+)
+```
+
+Missing 3 females and 2 males from PSTOCK16, AFK.
+```{r}
+(
+  extraction_hatchery_stray_PSTOCK16_AFK_female_v2 <- oceanak_hatchery_PSTOCK16 %>%
+    dplyr::filter(silly == "PSTOCK16",
+                  sex == "F",
+                  hatchery == "AFK",
+                  !(silly_source %in% extraction_PSTOCK16_hatchery$silly_source)) %>%
+    dplyr::group_by(silly, sex, hatchery) %>%
+    dplyr::slice_sample(n = 3, replace = FALSE) %>%
+    dplyr::ungroup() %>% 
+    dplyr::arrange(silly, fish_id) %>% 
+    dplyr::select(
+      silly_source,
+      silly,
+      fish_id,
+      dwp_barcode,
+      dwp_well,
+      tissue_type,
+      sample_date,
+      sex,
+      hatchery,
+      otolith_mark_present,
+      otolith_mark_id
+    )
+)
+
+(
+  extraction_hatchery_stray_PSTOCK16_AFK_male_v2 <- oceanak_hatchery_PSTOCK16 %>%
+    dplyr::filter(silly == "PSTOCK16",
+                  sex == "M",
+                  hatchery == "AFK",
+                  !(silly_source %in% extraction_PSTOCK16_hatchery$silly_source)) %>%
+    dplyr::group_by(silly, sex, hatchery) %>%
+    dplyr::slice_sample(n = 2, replace = FALSE) %>%
+    dplyr::ungroup() %>% 
+    dplyr::arrange(silly, fish_id) %>% 
+    dplyr::select(
+      silly_source,
+      silly,
+      fish_id,
+      dwp_barcode,
+      dwp_well,
+      tissue_type,
+      sample_date,
+      sex,
+      hatchery,
+      otolith_mark_present,
+      otolith_mark_id
+    )
+)
+```
+
+Bind together, make sure no duplicates
+```{r}
+(
+  extraction_hatchery_stray_PSTOCK16_v2 <-
+    dplyr::bind_rows(
+      extraction_hatchery_stray_PSTOCK16_AFK_female_v2,
+      extraction_hatchery_stray_PSTOCK16_AFK_male_v2
+    ) %>%
+    dplyr::distinct()
+)
+```
+
+Double check sample sizes
+```{r}
+extraction_hatchery_stray_PSTOCK16_v2 %>% 
+  dplyr::count(silly, sex, hatchery)
+```
+
+Write it out for posterity
+```{r}
+readr::write_csv(x = extraction_hatchery_stray_PSTOCK16_v2, file = "../output/extraction_PSTOCK16_hatchery_v2.csv")
+```
 
 End...
