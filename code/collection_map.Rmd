@@ -1,0 +1,94 @@
+---
+title: "PWS Pink Salmon Whole Genome Collection Map"
+date: "`r paste(format(Sys.Date(), format = '%B %d, %Y'))`"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, message=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(lubridate)
+library(leaflet)
+library(DT)
+library(readxl)
+```
+
+# Table of Collection Information
+
+Below is a table showing the different sampling units from the `collections` tab in `extraction_selection.xlsx`.
+```{r collection_table}
+(
+  collections <-
+    readxl::read_xlsx(
+      path = "../output/extraction_selection.xlsx",
+      sheet = "collections",
+      range = "A1:O33"
+    ) 
+)
+```
+
+# Map of Collections
+
+Quick-n-dirty map showing the collection sampling locations for each sampling unit (see the `collections` tab in  `extraction_selection.xlsx` for details). It is also printed above for reference.
+
+**Note** this map is interactive, you can zoom (mouse wheel) and navigate (click and drag). Many points are clustered, since fish from the same collection may be used for multiple sampling units. If you click on a cluster, you will be able to see color-coded icons labeled by collection unit. The legend explains the colors (even = lighter, odd = darker). If you click on the icon, a pop up will show the `silly`, `location`, and `time_point`.
+```{r}
+collections <- collections %>% 
+  tidyr::unite(col = "location_type_lineage", c("location_type", "lineage"))
+
+location_type_lineage <- c(
+  "hatchery_even",
+  "hatchery_odd",
+  "source_even",
+  "source_odd",
+  "wild_even",
+  "wild_odd",
+  "stray_even",
+  "stray_odd"
+)
+
+colors8 <- c(
+  "red",
+  "darkred",
+  "blue",
+  "darkblue",
+  "purple",
+  "darkpurple",
+  "lightgray",
+  "gray"
+)
+
+
+color_tib8 <-
+  tibble::tibble(location_type_lineage = location_type_lineage,
+                 color = colors8)
+
+collections <- collections %>%
+  dplyr::left_join(color_tib8, by = "location_type_lineage")
+
+icons <- awesomeIcons(icon = 'egg', iconColor = 'transparent', library = 'ion', markerColor = collections$color)
+
+collections %>%
+  leaflet::leaflet(width = "100%") %>%
+  leaflet::addTiles() %>%
+  leaflet::addAwesomeMarkers(
+    lng = ~ longitude,
+    lat = ~ latitude,
+    icon = icons,
+    label = ~ as.character(sample_unit_no),
+    popup = ~ paste(silly, location, time_point, sep = "<br>"),
+    labelOptions = leaflet::labelOptions(noHide = TRUE, textOnly = TRUE, direction = "top"),
+    clusterOptions = leaflet::markerClusterOptions(spiderfyDistanceMultiplier = 1.2)
+  ) %>% 
+  leaflet::addLegend("bottomright", labels = location_type_lineage, colors = c(colors8[1:4], "magenta", colors8[c(5, 7:8)]), opacity = 1)
+```
+
+Please note that the two historical AFK hatchery collections (1 and 3) were actually taken from the Wally Noerenberg hatchery, which shares broodstock with AFK. No cause for alarm :).
+
+Let me know if you have any questions!
+
