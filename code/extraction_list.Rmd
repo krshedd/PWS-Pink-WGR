@@ -1736,4 +1736,142 @@ Write it out for posterity
 readr::write_csv(x = extraction_hatchery_stray_PSTOCK16_v2, file = "../output/extraction_PSTOCK16_hatchery_v2.csv")
 ```
 
+# Additional paired data for Will
+
+10/12/22
+Will Hemstrom, Mark Christie's new post-doc, is requesting additional paired data for his WGR analyses.
+
+Length
+Otolith ID
+Location
+Parents?
+
+Just kidding, 10/14/22, abandoning the code below, going to start a different notebook for cleanliness `individual_paired_data_join.Rmd`
+
+
+## Fish we extracted
+
+### Erb 2017 natural
+
+Read in data for the fish we selected
+
+```{r}
+(extraction_erb_2017 <- readr::read_csv(file = "../output/extraction_selection_PERB17.csv"))
+```
+
+### Stockdale 2016 natural
+
+```{r}
+(extraction_PSTOCK16_natural <- readr::read_csv(file = "../output/extraction_PSTOCK16_natural.csv"))
+```
+
+```{r}
+(extraction_PSTOCK16_natural_v2 <- readr::read_csv(file = "../output/extraction_PSTOCK16_natural_v2.csv"))
+```
+
+### Stockdale 2015 natural
+
+```{r}
+(extraction_PSTOCK15_natural <- readr::read_csv(file = "../output/extraction_PSTOCK15_natural.csv"))
+```
+
+### Hogan 2016 natural
+
+```{r}
+(extraction_PHOGAN16_natural <- readr::read_csv(file = "../output/extraction_PHOGAN16_natural.csv"))
+```
+
+### Hogan 2015 natural
+
+```{r}
+(extraction_PHOGAN15_natural <- readr::read_csv(file = "../output/extraction_PHOGAN15_natural.csv"))
+```
+
+
+
+
+```{r}
+( <- readr::read_csv(file = "../output/extraction_P"))
+```
+
+
+
+
+
+
+
+
+## Salmon Biological Fact
+
+### PERB17
+
+Sex and otolith read data lives here...
+```{r}
+(oceanak_og <- readr::read_csv(file = "../data/Erb 2017 AHRP Salmon Biological Data 20220321_151027.csv"))
+```
+
+
+
+
+
+### Join and modify
+
+Will need SillySource + DWB_Position for data keys
+Get length and otolith ID, will get location from `riverdist` .csv later on
+
+Modify, filter for silly codes of interest and tissue type "Heart-bulbus arteriosus"
+```{r}
+(
+  oceanak <- oceanak_og %>%
+    dplyr::filter(
+      TISSUE_TYPE == "Heart-bulbus arteriosus"
+    ) %>%
+    dplyr::rename(
+      silly = SILLY_CODE,
+      fish_id = FISH_ID,
+      tissue_type = TISSUE_TYPE,
+      dwp_barcode = DNA_TRAY_CODE,
+      dwp_well = DNA_TRAY_WELL_CODE,
+      sample_date = SAMPLE_DATE,
+      sex = SEX,
+      otolith_mark_present = OTOLITH_MARK_PRESENT
+    ) %>%
+    dplyr::mutate(sample_date = lubridate::ymd(sample_date)) %>% 
+    tidyr::unite(
+      col = "silly_source",
+      c(silly, fish_id),
+      sep = "_",
+      remove = FALSE
+    ) %>%
+    dplyr::select(
+      silly_source,
+      sample_date,
+      sex,
+      otolith_mark_present
+    )
+)
+```
+
+
+## Location Data
+
+Carcass recovery location
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 End...
