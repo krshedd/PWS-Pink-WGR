@@ -1,0 +1,303 @@
+---
+title: "Investigating Relatedness Among WGR Samples"
+subtitle: "Kyle Forgot to Filter out FS and HS Relationships from Dyads..."
+author: "Kyle Shedd"
+date: "2023-06-01"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Setup
+
+Clean directory and load packages
+```{r setup, include=FALSE}
+rm(list=ls())
+
+knitr::opts_chunk$set(echo = TRUE)
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  DT
+)
+
+rmarkdown::find_pandoc(dir = "C:/Users/krshedd/Program Files/rstudio-pandoc/")
+# source("~/../R/Functions.GCL.R")  # develop branch!!!
+```
+
+# Objective
+
+The objective of this notebooks is to look for full-sibling (FS) and/or half-sibling (HS) relationships among individuals from the "pedigree-assisted", natural-homing fish from Question Set B for Stockdale 2015 & 2016 and Hogan Bay 2015 & 2016. I attempted to limit my selection to offspring from NN crosses (triads), and only select 1 fish per `mating_id`, however, in instances were there were not enough samples I had to select offspring from natural-origin parents (dyads). Critically, and mistakenly, I neglected to limit those selections to a single `parent_id`, so we ended up with some FS or HS relationships.
+
+# Background
+
+During a Teams meeting for an update on even-lineage genotyping and analysis on 2023-06-01 Will Hemstrom noted that there were some outliers with Hogan 2016, likely due to relatedness. I took a quick look at `extraction_list.Rmd` and noticed that I'd failed to exclude dyads that had the same `parent_id`. This R Notebook is a more formal investigation of this oversight so I can provide Will with the relatedness information for Hogan 2016 and give him a heads up as to what he should expect for the odd-lineage Stockdale 2015 and Hogan 2015.
+
+This project is using leftover Pink Salmon Disaster 2016 funds to try to address questions about potential genetic mechanisms causing reduced RRS. This project is broken into two main questions:  
+
+  * A - genomic evidence for domestication selection over time (comparing historical vs. contemporary vs. brood source collections)  
+  * B - genomic differences between hatchery strays vs. natural-origin homing individuals
+
+![Screenshot of sample design](../data/sample_units.PNG)
+
+# Import Data
+
+## WGR Sample Selection
+
+Load which samples we selected for WGR
+```{r}
+(extraction_PSTOCK16_natural <- readr::read_csv(file = "../output/extraction_PSTOCK16_natural.csv", show_col_types = FALSE))
+extraction_PSTOCK15_natural <- readr::read_csv(file = "../output/extraction_PSTOCK15_natural.csv", show_col_types = FALSE)
+extraction_PHOGAN16_natural <- readr::read_csv(file = "../output/extraction_PHOGAN16_natural.csv", show_col_types = FALSE)
+extraction_PHOGAN15_natural <- readr::read_csv(file = "../output/extraction_PHOGAN15_natural.csv", show_col_types = FALSE)
+```
+
+## Pedigrees
+
+Load pedigrees used to aid in selection
+```{r}
+(
+  all_streams_parents_paired_14_16_cross <-
+    readr::read_csv(file = "../../PWS Pink/GitHub-PWS-Pink-Parentage/Stockdale_Hogan_Gilmour_Paddy_Erb/all_streams_parents_paired_14_16_cross.csv", show_col_types = FALSE)
+)
+
+(
+  all_streams_parents_paired_14_16 <-
+    readr::read_csv(file = "../../PWS Pink/GitHub-PWS-Pink-Parentage/Stockdale_Hogan_Gilmour_Paddy_Erb/all_streams_parents_paired_14_16.csv", show_col_types = FALSE)
+)
+
+(
+  stockdale_parents_paired_13_15 <-
+    readr::read_csv(file = "../../PWS Pink/GitHub-PWS-Pink-Parentage/Stockdale/stock_parents_paired_13_15.csv", show_col_types = FALSE) %>% 
+    janitor::clean_names()
+)
+
+(
+  hogan_parents_paired_13_15 <-
+    readr::read_csv(file = "../../PWS Pink/GitHub-PWS-Pink-Parentage/Hogan/hogan_parents_paired_13_15.csv", show_col_types = FALSE) %>% 
+    janitor::clean_names()
+)
+```
+
+# Investigate Relatedness
+
+I'm only going to investigate relatedness from the parent-offspring perspective (i.e. do any of our samples share the same parent).
+
+I'm NOT going whole hog and looking for FS or HS relationships among all fish we selected.
+
+## Stockdale 2016
+
+This set is mercifully easy, I was able to pick 18 females and 17 males from the triad data, limited by `mating_id`, `parent_id_sire`, and `parent_id_dam`. I only had to grab 1 male from the dyad data. Good job past Kyle!
+
+Let's double check to make sure!
+```{r}
+extraction_PSTOCK16_natural %>%
+  dplyr::left_join(y = all_streams_parents_paired_14_16,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::count(parent_id) %>% 
+  dplyr::arrange(dplyr::desc(n))
+```
+
+Whew, none of our parent_ids for Stockdale 2016 are duplicated.
+
+## Stockdale 2015
+
+Okay, for Stockdale 2015 we had no triad data, so I was forced to select from dyads only. Let's see how messy it is...
+```{r}
+extraction_PSTOCK15_natural %>%
+  dplyr::left_join(y = stockdale_parents_paired_13_15,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::count(parent_id) %>% 
+  dplyr::arrange(dplyr::desc(n))
+```
+
+Well fuck, we've got some FS/HS relationships in there for sure! Better figure out who they are...
+```{r}
+(
+  extraction_PSTOCK15_natural_same_parents <-
+    extraction_PSTOCK15_natural %>%
+    dplyr::left_join(
+      y = stockdale_parents_paired_13_15,
+      by = c("silly" = "silly_off", "fish_id" = "fish_id_off")
+    ) %>%
+    dplyr::group_by(parent_id) %>%
+    dplyr::filter(dplyr::n() > 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::arrange(parent_id)
+)
+```
+
+Narrow this down to just the columns that Will H. will care about
+```{r}
+(
+  extraction_PSTOCK15_natural_same_parents_filtered <-
+    extraction_PSTOCK15_natural_same_parents %>%
+    dplyr::select(silly, fish_id, sex, origin, date_off, parent_id) %>%
+    dplyr::mutate(
+      sex = dplyr::case_when(sex == "M" ~ "male",
+                             sex == "F" ~ "female",
+                             TRUE ~ sex),
+      origin = dplyr::case_when(origin == "Natural" ~ "natural",
+                                TRUE ~ origin)
+    ) %>%
+    dplyr::rename(date = date_off)
+)
+```
+
+If we only keep 1 sample per `parent_id`, how many samples do we get to keep?
+```{r}
+extraction_PSTOCK15_natural %>%
+  dplyr::left_join(y = stockdale_parents_paired_13_15,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::group_by(parent_id) %>%
+  dplyr::slice_sample(n = 1, replace = FALSE)
+```
+
+Still get to keep 27 out of 36 samples.
+
+## Hogan 2016
+
+This was the collection where the error was first noticed, let's confirm and also make sure that none of our triad fish have relationships with dyad fish.
+
+Whoops, upon a closer reading of what I did, I did not choose ANY triad fish, since there were so few. All of my selections were from dyads.
+```{r}
+extraction_PHOGAN16_natural %>%
+  dplyr::left_join(y = all_streams_parents_paired_14_16,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::count(parent_id) %>% 
+  dplyr::arrange(dplyr::desc(n))
+```
+
+Well fuck, we've got some FS/HS relationships in there for sure! Better figure out who they are...
+```{r}
+(
+  extraction_PHOGAN16_natural_same_parents <-
+    extraction_PHOGAN16_natural %>%
+    dplyr::left_join(
+      y = all_streams_parents_paired_14_16,
+      by = c("silly" = "silly_off", "fish_id" = "fish_id_off")
+    ) %>%
+    dplyr::group_by(parent_id) %>%
+    dplyr::filter(dplyr::n() > 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::arrange(parent_id)
+)
+```
+
+Narrow this down to just the columns that Will H. will care about
+```{r}
+(
+  extraction_PHOGAN16_natural_same_parents_filtered <-
+    extraction_PHOGAN16_natural_same_parents %>%
+    dplyr::select(silly, fish_id, sex, origin_off, date_off, parent_id) %>%
+    dplyr::mutate(
+      sex = dplyr::case_when(sex == "Male" ~ "male",
+                             sex == "Female" ~ "female",
+                             TRUE ~ sex),
+      origin_off = dplyr::case_when(origin_off == "Natural" ~ "natural",
+                                TRUE ~ origin_off)
+    ) %>%
+    dplyr::rename(date = date_off,
+                  origin = origin_off)
+)
+```
+
+If we only keep 1 sample per `parent_id`, how many samples do we get to keep?
+```{r}
+extraction_PHOGAN16_natural %>%
+  dplyr::left_join(y = all_streams_parents_paired_14_16,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::group_by(parent_id) %>%
+  dplyr::slice_sample(n = 1, replace = FALSE)
+```
+
+Still get to keep 25 out of 36 samples.
+
+## Hogan 2015
+
+Okay, for Hogan 2015 we had no triad data, so I was forced to select from dyads only. Let's see how messy it is...
+```{r}
+extraction_PHOGAN15_natural %>%
+  dplyr::left_join(y = hogan_parents_paired_13_15,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::count(parent_id) %>% 
+  dplyr::arrange(dplyr::desc(n))
+```
+
+Well fuck, we've got some FS/HS relationships in there for sure! Better figure out who they are...
+```{r}
+(
+  extraction_PHOGAN15_natural_same_parents <-
+    extraction_PHOGAN15_natural %>%
+    dplyr::left_join(
+      y = hogan_parents_paired_13_15,
+      by = c("silly" = "silly_off", "fish_id" = "fish_id_off")
+    ) %>%
+    dplyr::group_by(parent_id) %>%
+    dplyr::filter(dplyr::n() > 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::arrange(parent_id)
+)
+```
+
+Narrow this down to just the columns that Will H. will care about
+```{r}
+(
+  extraction_PHOGAN15_natural_same_parents_filtered <-
+    extraction_PHOGAN15_natural_same_parents %>%
+    dplyr::select(silly, fish_id, sex, origin, date_off, parent_id) %>%
+    dplyr::mutate(
+      sex = dplyr::case_when(sex == "M" ~ "male",
+                             sex == "F" ~ "female",
+                             TRUE ~ sex),
+      origin = dplyr::case_when(origin == "Natural" ~ "natural",
+                                TRUE ~ origin)
+    ) %>%
+    dplyr::rename(date = date_off)
+)
+```
+
+If we only keep 1 sample per `parent_id`, how many samples do we get to keep?
+```{r}
+extraction_PHOGAN15_natural %>%
+  dplyr::left_join(y = hogan_parents_paired_13_15,
+                   by = c("silly" = "silly_off", "fish_id" = "fish_id_off")) %>%
+  dplyr::group_by(parent_id) %>%
+  dplyr::slice_sample(n = 1, replace = FALSE)
+```
+
+Still get to keep 13 out of 36 samples.
+
+## Bind It All Together
+
+Send this to Will so he can cull individuals.
+```{r}
+(
+  PHOGAN16_PHOGAN15_PSTOCK15_natural_same_parents <-
+    dplyr::bind_rows(
+      extraction_PHOGAN16_natural_same_parents_filtered,
+      extraction_PHOGAN15_natural_same_parents_filtered,
+      extraction_PSTOCK15_natural_same_parents_filtered
+    ) %>% 
+    readr::write_csv(file = "../output/PHOGAN16_PHOGAN15_PSTOCK15_natural_same_parents.csv")
+)
+```
+
+How bad was it?
+```{r}
+PHOGAN16_PHOGAN15_PSTOCK15_natural_same_parents %>% 
+  dplyr::count(silly, parent_id)
+```
+
+If you end up keep only 1 fish from each “family”, it’ll drop our sample sizes down from 36 fish/collection to:
+Hogan 2016 – 25 fish
+Hogan 2015 – 13 fish
+Stockdale 2015 – 27 fish
+
+End
