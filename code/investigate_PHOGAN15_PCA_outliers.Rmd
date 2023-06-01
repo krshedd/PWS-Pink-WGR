@@ -1,0 +1,74 @@
+---
+title: "Investigating PHOGAN15 WGR PCA Outliers"
+subtitle: "What the heck is going on with those 20 natural-origin fish?"
+author: "Kyle Shedd"
+date: "2023-03-10"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Setup
+
+Clean directory and load packages
+```{r setup, include=FALSE}
+rm(list=ls())
+
+knitr::opts_chunk$set(echo = TRUE)
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate
+)
+
+source("~/../R/Functions.GCL.R")  # develop branch!!!
+
+.username = readLines("~/../R/usr_pw.txt", n = 1)
+.password = readLines("~/../R/usr_pw.txt" , n = 2)[[2]]
+```
+
+# Import Data
+
+## Locus Control
+
+```{r}
+loci298 <- dget(file = "~/../Desktop/Local_PWS_pinks/loci298.txt")
+
+CreateLocusControl.GCL(locusnames = loci298, username = .username, password = .password)
+```
+
+## PCA Data
+
+```{r}
+(pca <- readr::read_csv(file = "../data/HoganBayCreek_samples.txt"))
+```
+
+## Genotypes
+
+```{r}
+load_sillys(path = "~/../Desktop/Local_PWS_pinks/Genotypes/Hogan_13_14_15_16/298/", sillyvec = "PHOGAN15")
+```
+
+Convert to GCL 2.0 tidy style
+```{r}
+old2new_gcl.GCL(sillyvec = "PHOGAN15", save_old = FALSE)
+```
+
+Hrrmm, that is lame, might as well just pull new data...
+
+```{r}
+rm(PHOGAN15.gcl)
+LOKI2R.GCL(sillyvec = "PHOGAN15", username = .username, password = .password, test_type = "GTSNP")
+```
+
+# Visualize
+
+Historgram of PC1
+
+
+Nevermind, Will H. found a massive error in his genotypes...so this might just be an artifact.
