@@ -1,0 +1,798 @@
+---
+title: "Determine Collection-Specific Average Run Timing"
+subtitle: "Correlate *lrrc9* Haplotypes to Egg-take + Aerial Surveys?"
+author: "Kyle Shedd"
+date: "2023-10-17"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Objective
+
+The objective of this R Notebook is to determine collection-specific average run timing to see how it correlates to *lrrc9* haplotypes. We'll be using the average 50% egg take date for hatchery collections (data provided by Heather Scannell, PWS Seine AMB) and average peak aerial survey stream counts for stream collections (data provided by Jenni Morella, PWS Research AMB). 
+
+# Background
+
+Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing. Here, I will be attempting to get collection-specific run timing data that is comparable across hatchery and stream collections so we can see how run timing correlates with *lrrc9* haplotypes.
+
+# Setup
+
+Load all necessary packages, as of 2023-08-11 Kyle switched to [GCLr](https://github.com/commfish/GCLr).
+```{r setup, message=FALSE, results='hide'}
+rm(list = ls(all.names = TRUE))
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  scales,
+  janitor,
+  GCLr
+)
+
+knitr::opts_chunk$set(fig.width = 10)
+
+# source("~/R/Functions.GCL.R")  # source GCL scripts, switched to GCLr package
+.username = readLines("~/R/usr_pw.txt", n = 1)  # LOKI username
+.password = readLines("~/R/usr_pw.txt" , n = 2)[[2]]  # LOKI password
+```
+
+# Import Data
+
+## Collection Cheat Sheet
+
+First I need to determine which collections I am dealing with.
+```{r}
+(
+  collections <-
+    readxl::read_xlsx(path = "../output/Cheat Sheet_KRS_20221213.xlsx", sheet = "collections") %>% 
+    dplyr::mutate(row = dplyr::row_number()) %>% 
+    dplyr::select(row, dplyr::everything())
+)
+```
+
+## Individual Extraction Data
+
+Fix date...
+```{r}
+(
+  individuals <-
+    readxl::read_excel(
+      path = "../output/extraction_selection_revised_v2_20221115.xlsx",
+      sheet = "individuals",
+      col_types = c(
+        "numeric",
+        rep("text", 2),
+        "numeric",
+        rep("text", 3),
+        "text",
+        rep("text", 3),
+        rep("numeric", 3),
+        rep("text", 4)
+      ),
+      na = "NA"
+    ) %>%
+    dplyr::mutate(date = lubridate::as_date(
+      stringr::str_sub(
+        string = date,
+        start = 1,
+        end = 10
+      )
+    ))
+)
+```
+
+## Egg-take
+
+Read in the egg-take data from Heather Scannell, only includes data through 2021!
+
+### VFDA
+
+**NOTE** dates are ALL formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
+```{r}
+(
+  eggtake_VFDA <-
+    readxl::read_xls(
+      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
+      sheet = "VFDA Fecundity Data",
+      range = "A3:N44",
+      col_types = c(
+        "numeric",
+        rep("text", 2),
+        rep("numeric", 5),
+        "skip",
+        rep("date", 3),
+        rep("numeric", 2)
+      )
+    ) %>% janitor::clean_names() %>% 
+    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
+                  end_date = lubridate::as_date(egg_take_end_date),
+                  p50_date = lubridate::as_date(x50_percent_egg_take_date)) %>% 
+    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
+)
+```
+
+### AFK
+
+**NOTE** dates are ALL formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
+```{r}
+(
+  eggtake_AFK <-
+    readxl::read_xls(
+      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
+      sheet = "AFK Fecundity Data",
+      range = "A3:K51",
+      col_types = c(
+        "numeric",
+        rep("text", 2),
+        rep("numeric", 4),
+        rep("date", 3),
+        "numeric"
+      )
+    ) %>% janitor::clean_names() %>% 
+    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
+                  end_date = lubridate::as_date(egg_take_end_date),
+                  p50_date = lubridate::as_date(x50_percent_egg_take_date),
+                  p50_julian = lubridate::yday(p50_date)) %>% 
+    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
+)
+```
+
+### CCH
+
+**NOTE** dates are mostly formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
+```{r}
+(
+  eggtake_CCH <-
+    readxl::read_xls(
+      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
+      sheet = "CCH Fecundity Data",
+      range = "A3:N50",
+      col_types = c(
+        "numeric",
+        rep("text", 2),
+        rep("numeric", 6),
+        rep("date", 3),
+        rep("numeric", 2)
+      )
+    ) %>% janitor::clean_names() %>% 
+    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
+                  end_date = lubridate::as_date(egg_take_end_date),
+                  p50_date = lubridate::as_date(x50_percent_egg_take_date),
+                  p50_julian = lubridate::yday(p50_date)) %>% 
+    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
+)
+```
+
+## Aerial Survey
+
+I had to copy/paste the `.xlsm` into a `.csv` and change a couple of `REF` to 0
+```{r}
+(
+  aerial <-
+    readr::read_csv(file = "../data/run_timing/PWS_1962–2023_for Kyle.csv") %>%
+    janitor::clean_names() %>%
+    dplyr::mutate(
+      date = lubridate::as_date(survdate, format = "%m/%d/%Y"),
+      julian = lubridate::yday(date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_)
+    )
+)
+```
+
+# Manipulate Data
+
+## Egg-take
+
+### VFDA
+
+Fix dates to correct year, calculate Julian date for p50 egg take for each year.
+```{r}
+(
+  eggtake_VFDA_p50 <- eggtake_VFDA %>%
+    dplyr::mutate(
+      p50_date = as.character(p50_date),
+      p50_date = stringr::str_sub(
+        string = p50_date,
+        start = 6,
+        end = -1
+      ),
+      p50_date = stringr::str_c(year, p50_date, sep = "-"),
+      p50_date = lubridate::as_date(p50_date),
+      p50_julian = lubridate::yday(p50_date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_)
+    ) %>%
+    dplyr::select(year, lineage, p50_date, p50_julian)
+)
+```
+
+I'm going to take a 20-year rolling average p50 egg-take date for each VFDA collection.
+
+Testing one collection at a time.
+```{r}
+eggtake_VFDA_p50 %>%
+  dplyr::mutate(
+    location = "VFDA",
+    collection_year = 2015,
+    collection_lineage = "odd"
+  ) %>%
+  dplyr::filter(
+    lineage == collection_lineage,
+    dplyr::between(year, collection_year - 10, collection_year +
+                     10)
+  ) %>%
+  dplyr::group_by(location, collection_year, collection_lineage) %>%
+  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
+```
+
+Vectorize to loop through all 4 VFDA collections.
+```{r}
+(
+  VFDA_p50 <- collections %>%
+    dplyr::filter(location == "VFDA") %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      eggtake_VFDA_p50 %>%
+        dplyr::mutate(location = "VFDA"),
+      by = "location",
+      suffix = c("", "_eggtake")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_eggtake == lineage,
+      dplyr::between(year_eggtake, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(p50_julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### AFK
+
+Fix dates to correct year, calculate Julian date for p50 egg take for each year.
+```{r}
+(
+  eggtake_AFK_p50 <- eggtake_AFK %>%
+    dplyr::mutate(
+      p50_date = as.character(p50_date),
+      p50_date = stringr::str_sub(
+        string = p50_date,
+        start = 6,
+        end = -1
+      ),
+      p50_date = stringr::str_c(year, p50_date, sep = "-"),
+      p50_date = lubridate::as_date(p50_date),
+      p50_julian = lubridate::yday(p50_date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_)
+    ) %>%
+    dplyr::select(year, lineage, p50_date, p50_julian)
+)
+```
+
+I'm going to take a 20-year rolling average p50 egg-take date for each AFK collection.
+
+Testing one collection at a time.
+```{r}
+eggtake_AFK_p50 %>%
+  dplyr::mutate(
+    location = "AFK",
+    collection_year = 1991,
+    collection_lineage = "odd"
+  ) %>%
+  dplyr::filter(
+    lineage == collection_lineage,
+    dplyr::between(year, collection_year - 10, collection_year +
+                     10)
+  ) %>%
+  dplyr::group_by(location, collection_year, collection_lineage) %>%
+  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
+```
+
+Vectorize to loop through all 4 AFK collections.
+```{r}
+(
+  AFK_p50 <- collections %>%
+    dplyr::filter(location == "AFK") %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      eggtake_AFK_p50 %>%
+        dplyr::mutate(location = "AFK"),
+      by = "location",
+      suffix = c("", "_eggtake")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_eggtake == lineage,
+      dplyr::between(year_eggtake, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(p50_julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### CCH
+
+Fix dates to correct year, calculate Julian date for p50 egg take for each year.
+```{r}
+(
+  eggtake_CCH_p50 <- eggtake_CCH %>%
+    dplyr::mutate(
+      p50_date = as.character(p50_date),
+      p50_date = stringr::str_sub(
+        string = p50_date,
+        start = 6,
+        end = -1
+      ),
+      p50_date = stringr::str_c(year, p50_date, sep = "-"),
+      p50_date = lubridate::as_date(p50_date),
+      p50_julian = lubridate::yday(p50_date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_)
+    ) %>%
+    dplyr::select(year, lineage, p50_date, p50_julian)
+)
+```
+
+I'm going to take a 20-year rolling average p50 egg-take date for each CCH collection.
+
+Testing one collection at a time.
+```{r}
+eggtake_CCH_p50 %>%
+  dplyr::mutate(
+    location = "CCH",
+    collection_year = 1991,
+    collection_lineage = "odd"
+  ) %>%
+  dplyr::filter(
+    lineage == collection_lineage,
+    dplyr::between(year, collection_year - 10, collection_year +
+                     10)
+  ) %>%
+  dplyr::group_by(location, collection_year, collection_lineage) %>%
+  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
+```
+
+Vectorize to loop through all 4 CCH collections.
+```{r}
+(
+  CCH_p50 <- collections %>%
+    dplyr::filter(location == "Cannery Creek") %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      eggtake_CCH_p50 %>%
+        dplyr::mutate(location = "Cannery Creek"),
+      by = "location",
+      suffix = c("", "_eggtake")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_eggtake == lineage,
+      dplyr::between(year_eggtake, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(p50_julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+## Aerial
+
+### Duck
+
+How many different "Duck River" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Duck")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_duck_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Duck")) %>%
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE)
+)
+```
+
+Vectorize to loop through all 4 Duck River collections.
+```{r}
+(
+  duck_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Duck")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_duck_p50 %>%
+        dplyr::mutate(location = "Duck River"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### Erb
+
+How many different "Erb Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Erb")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_erb_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Erb")) %>%
+    dplyr::mutate(strname = "Erb Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Vectorize to loop through all 4 Erb Creek collections.
+```{r}
+(
+  erb_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Erb")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_erb_p50 %>%
+        dplyr::mutate(location = "Erb Creek"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### Gregorieff
+
+How many different "Gregorieff Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Greg")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_greg_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Gregor")) %>%
+    dplyr::mutate(strname = "Gregorieff Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Vectorize to loop through all 4 Gregorieff Creek collections.
+```{r}
+(
+  greg_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Gregorieff")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_greg_p50 %>%
+        dplyr::mutate(location = "Gregorieff Creek"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### Stockdale
+
+How many different "Stockdale Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Stockdale Creek")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_stock_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Stockdale Creek")) %>%
+    dplyr::mutate(strname = "Stockdale Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Vectorize to loop through all 4 Stockdale Creek collections.
+```{r}
+(
+  stock_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Stockdale")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_stock_p50 %>%
+        dplyr::mutate(location = "Stockdale Creek"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### Hogan
+
+How many different "Hogan Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Hogan")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_hogan_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Hogan Bay")) %>%
+    dplyr::mutate(strname = "Hogan Bay Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Vectorize to loop through all 4 Hogan Creek collections.
+```{r}
+(
+  hogan_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Hogan")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_hogan_p50 %>%
+        dplyr::mutate(location = "Hogan Bay Creek"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+### Spring
+
+How many different "Spring Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Spring")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the p50 (peak count) date for each year.
+```{r}
+(
+  aerial_spring_p50 <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Spring"),
+                  strnum == 217) %>%
+    dplyr::mutate(strname = "Spring Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Vectorize to loop through all 4 Spring Creek collections.
+```{r}
+(
+  spring_p50 <- collections %>%
+    dplyr::filter(grepl(x = location, pattern = "Spring")) %>%
+    dplyr::select(location, silly, year, lineage) %>%
+    dplyr::left_join(
+      aerial_spring_p50 %>%
+        dplyr::mutate(location = "Spring Creek"),
+      by = "location",
+      suffix = c("", "_aerial")
+    ) %>%
+    dplyr::group_by(location, year, lineage) %>%
+    dplyr::filter(
+      lineage_aerial == lineage,
+      dplyr::between(year_aerial, year - 10, year + 10)
+    ) %>%
+    dplyr::summarise(
+      p50_julian  = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+# Bind
+
+Bind together all of the egg-take and aerial survey data.
+```{r}
+(
+  p50 <- dplyr::bind_rows(
+    VFDA_p50,
+    AFK_p50,
+    CCH_p50,
+    duck_p50,
+    erb_p50,
+    greg_p50,
+    stock_p50,
+    hogan_p50,
+    spring_p50
+  )
+)
+```
+
+# Collection/Individual Dates
+
+Get the average date for each collection based on individual data.
+```{r}
+(
+  colletions_indiv_avg_date <- individuals %>%
+    dplyr::mutate(
+      julian = lubridate::yday(date),
+      year = lubridate::year(date),
+      year = dplyr::case_when(
+        silly == "PAFK94H" ~ 1994,
+        silly == "PGREG94" ~ 1994,
+        silly == "PSTOCK16" ~ 2016,
+        silly == "PVFDA14" ~ 2014,
+        TRUE ~ year
+      ),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_),
+      location_type = dplyr::case_when(
+        silly %in% c(
+          "PAFK94H",
+          "PAFK14",
+          "PAFK91H",
+          "PAFK13",
+          "PCANN14",
+          "PCANN91H",
+          "PCANN15",
+          "PVFDA94H",
+          "PVFDA14",
+          "PVFDE91H",
+          "PVFDA15"
+        ) ~ "hatchery",
+        silly %in% c(
+          "PDUCK94T",
+          "PDUCK14E",
+          "PDUCK14L",
+          "PERBE91T",
+          "PERBL91T",
+          "PERB17",
+          "PGREG94",
+          "PGREG14E",
+          "PGREG14L",
+          "PDUCM91T",
+          "PDUCK13"
+        ) ~ "source",
+        silly == "PSTOCK16" & origin == "hatchery" ~ "stray",
+        silly == "PSTOCK16" & origin == "natural" ~ "wild",
+        silly == "PSTOCK15" & origin == "hatchery" ~ "stray",
+        silly == "PSTOCK15" & origin == "natural" ~ "wild",
+        silly == "PHOGAN16" & origin == "hatchery" ~ "stray",
+        silly == "PHOGAN16" & origin == "natural" ~ "wild",
+        silly == "PHOGAN15" & origin == "hatchery" ~ "stray",
+        silly == "PHOGAN15" & origin == "natural" ~ "wild",
+        silly %in% c("PSPRIN14", "PSPRIN15") ~ "wild",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    dplyr::left_join(
+      y = collections %>% dplyr::select(1:6, silly),
+      by = c("silly", "location_type")
+    ) %>%
+    dplyr::select(
+      row,
+      sample_unit_no,
+      objective,
+      silly,
+      location,
+      location_descriptor,
+      dplyr::everything()
+    ) %>%
+    dplyr::group_by(
+      row,
+      sample_unit_no,
+      objective,
+      silly,
+      year,
+      lineage,
+      location,
+      location_type,
+      location_descriptor
+    ) %>%
+    dplyr::summarise(
+      collection_julian = mean(julian, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+```
+
+# Join Egg-take & Aerial
+
+Join in the individual level average dates with the aerial survey and p50 egg-take 20 year rolling average dates.
+```{r}
+(
+  colletions_indiv_avg_date %>%
+    dplyr::left_join(y = p50, by = c("location", "year", "lineage")) %>%
+    readr::write_csv(file = "../output/run_timing.csv")
+)
+```
+
+# Conclusions
+
+Wait...why don't we just use collection date (or average collection date) for run timing???
+
+Make sure to join in `collection_julian` as well, in addition to the 20-year average run timing of each system!
+
+End
