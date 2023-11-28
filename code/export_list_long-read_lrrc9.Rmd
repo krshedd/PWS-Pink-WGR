@@ -1,0 +1,159 @@
+---
+title: "DNA Cherry-Pick Export for *lrrc9* Long-Read Sequencing"
+subtitle: "What is Going On at *lrrc9*?"
+author: "Kyle Shedd"
+date: "2023-11-28"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Objective
+
+The objective of this R Notebook is to cherry pick the 90 samples selected by Will/Mark for long-read sequencing at *lrrc9* to confirm haplotypes. 
+
+# Background
+
+Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing. Here, I will be subsample P076 fish for those 90 selected by Will for long-read sequencing at *lrrc9* to confirm haplotypes.
+
+# Setup
+
+Load all necessary packages, as of 2023-08-11 Kyle switched to [GCLr](https://github.com/commfish/GCLr).
+```{r setup, message=FALSE, results='hide'}
+rm(list = ls(all.names = TRUE))
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  scales,
+  janitor,
+  GCLr
+)
+
+knitr::opts_chunk$set(fig.width = 10)
+
+# source("~/R/Functions.GCL.R")  # source GCL scripts, switched to GCLr package
+.username = readLines("~/R/usr_pw.txt", n = 1)  # LOKI username
+.password = readLines("~/R/usr_pw.txt" , n = 2)[[2]]  # LOKI password
+```
+
+# Import Data
+
+## Will's Long-Read Selection
+
+Get Will's list of 90 fish for long-read sequencing.
+```{r}
+(
+  long_read_selection <-
+    readr::read_tsv(file = "../data/long-read_sequencing_samples/target_haplotype_samples.txt",
+                    col_names = c("fish", "lineage")) %>%
+    dplyr::mutate(
+      silly_source = stringr::str_replace_all(
+        string = fish,
+        pattern = "-",
+        replacement = "_"
+      )
+    )
+)
+```
+
+## Extraction Selection Revised 20221115
+
+Get the latest version of extraction selection.
+```{r}
+(extraction_selection <- readr::read_csv(file = "../output/extraction_selection_revised_20221115.csv"))
+```
+
+## P076 for Sequencing_Wells_revised_v2_better
+
+Get the latest version of the iStrategy wells table from P076.
+**NOTE** This should match up perfectly with `extraction_selection`!
+```{r}
+(
+  P076_wells <-
+    readr::read_csv(file = "../data/P076 for Sequencing_Wells_revised_v2_better.csv") %>% 
+    janitor::clean_names() %>% 
+    tidyr::unite(col = "silly_source", c(silly_code, fish), sep = "_", remove = FALSE) %>% 
+    dplyr::rename(dna_plate_id = plate_id,
+                  dna_plate_well = well)
+)
+```
+
+# Manipulate Data
+
+## Confirm Extraction Selection and P076 Wells
+
+Make sure that `extraction_selection` and `P076_wells` are identical!
+```{r}
+all.equal(extraction_selection %>% dplyr::select(silly_source, dna_plate_id, dna_plate_well),
+          P076_wells %>% dplyr::select(silly_source, dna_plate_id, dna_plate_well))
+```
+
+Whew! Excellent news.
+
+## Confirm all of Will's Samples
+
+Now let's make sure that all of Will's 90 selected long-read samples are in `P076_wells`.
+```{r}
+all(long_read_selection$silly_source %in% P076_wells$silly_source)
+```
+
+Fabulous
+
+# Export Request
+
+## Join
+
+Join the plate and well information with Will's selection
+```{r}
+(
+  long_read_export <- long_read_selection %>%
+    dplyr::select(silly_source, lineage) %>%
+    tidyr::separate(
+      col = silly_source,
+      into = c("silly", "fish_id"),
+      sep = "_",
+      remove = FALSE
+    ) %>%
+    dplyr::left_join(
+      y = P076_wells %>% dplyr::select(silly_source, dna_plate_id, dna_plate_well),
+      by = "silly_source"
+    ) %>%
+    tidyr::separate(
+      col = dna_plate_well,
+      into = c("dna_plate_row", "dna_plate_col"),
+      sep = 1,
+      remove = FALSE
+    ) %>%
+    dplyr::arrange(dna_plate_id, dna_plate_col, dna_plate_row) %>%
+    dplyr::select(
+      silly,
+      fish_id,
+      silly_source,
+      dna_plate_id,
+      dna_plate_well,
+      lineage
+    )
+)
+```
+
+## Write
+
+Write it out for the lab.
+```{r}
+readr::write_csv(x = long_read_export, file = "../output/long-read_sequencing_export_20231128.csv")
+```
+
+How many samples per silly?
+```{r}
+long_read_export %>% 
+  dplyr::count(silly)
+```
+
+End
