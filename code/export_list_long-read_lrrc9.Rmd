@@ -156,4 +156,55 @@ long_read_export %>%
   dplyr::count(silly)
 ```
 
+# Export Plate Map
+
+Read in plate map from Bryce + export request.
+```{r}
+(
+  long_read_export <-
+    readr::read_csv(file = "../output/long-read_sequencing_export_20231128.csv")
+)
+
+(
+  plate_map <-
+    readr::read_csv(file = "../data/long-read_sequencing_samples/Purdue_export_113023.csv") %>% 
+    janitor::clean_names()
+)
+```
+
+Join and write
+```{r}
+(
+  long_read_export %>%
+    dplyr::rename(
+      source_dna_plate_id = dna_plate_id,
+      source_dna_plate_well = dna_plate_well
+    ) %>%
+    dplyr::left_join(
+      y = plate_map,
+      by = c(
+        "source_dna_plate_id" = "source_position",
+        "source_dna_plate_well" = "source_well"
+      )
+    ) %>%
+    dplyr::mutate(
+      fish = stringr::str_replace_all(silly_source, pattern = "_", replacement = "-")
+    ) %>%
+    dplyr::rename(
+      destination_dna_plate_id = destination_position,
+      destination_dna_plate_well = destination_well
+    ) %>%
+    dplyr::select(
+      fish,
+      lineage,
+      source_dna_plate_id,
+      source_dna_plate_well,
+      destination_dna_plate_id,
+      destination_dna_plate_well,
+      volume
+    ) %>%
+    readr::write_csv(file = "../output/target_haplotype_samples_plate_map.csv")
+)
+```
+
 End
