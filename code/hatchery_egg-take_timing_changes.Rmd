@@ -1,6 +1,6 @@
 ---
-title: "Variation in PWS Pink Salmon Egg-Take Over Time"
-subtitle: "Has Egg-Take Timing Shifted?"
+title: "Variation in PWS Pink Salmon Egg Take Over Time"
+subtitle: "Has Egg Take Timing Shifted?"
 author: "Kyle Shedd"
 date: "2024-03-26"
 output:
@@ -14,7 +14,7 @@ editor_options:
 
 # Objective
 
-The objective of this R Notebook is to determine whether egg-take date for hatchery collections (data provided by Heather Scannell, PWS Seine AMB) has contracted over time. 
+The objective of this R Notebook is to determine whether egg take date for hatchery collections (data provided by Heather Scannell, PWS Seine AMB) has contracted over time. 
 
 # Background
 
@@ -45,9 +45,9 @@ knitr::opts_chunk$set(fig.width = 10)
 
 # Import Data
 
-## Egg-take
+## Egg take
 
-Read in the egg-take data from Heather Scannell, only includes data through 2021!
+Read in the egg take data from Heather Scannell, only includes data through 2021!
 
 ### VFDA
 
@@ -156,7 +156,7 @@ Read in the egg-take data from Heather Scannell, only includes data through 2021
 
 # Manipulate Data
 
-## Egg-take
+## Egg take
 
 ### VFDA
 
@@ -338,7 +338,7 @@ eggtake_clean <- dplyr::bind_rows(eggtake_AFK_clean, eggtake_WNH_clean, eggtake_
 
 # Plot
 
-Plot start/stop egg-take dates over time as ribbon charts.
+Plot start/stop egg take dates over time as ribbon charts.
 ```{r}
 eggtake_p50_mean <- eggtake_clean %>% 
   dplyr::mutate(lineage = stringr::str_to_sentence(lineage),
@@ -355,7 +355,7 @@ eggtake_clean %>%
   ggplot2::geom_hline(data = eggtake_p50_mean, ggplot2::aes(yintercept = mean_p50), lwd = 1, lty = 2) +
   # ggplot2::geom_smooth(method = "lm", se = FALSE) +
   ggplot2::theme_bw() +
-  ggplot2::labs(x = "Brood Year", y = "Day of Year", fill = "Lineage", title = "PWS Pink Salmon: Timing of Egg-Take by Hatchery x Lineage") +
+  ggplot2::labs(x = "Brood Year", y = "Day of Year", fill = "Lineage", title = "PWS Pink Salmon: Timing of Egg Take by Hatchery x Lineage") +
   ggplot2::facet_grid(rows = dplyr::vars(lineage), cols = dplyr::vars(hatchery))
 ```
 
@@ -374,10 +374,12 @@ eggtake_clean %>%
   ggplot2::geom_hline(data = eggtake_duration_mean, ggplot2::aes(yintercept = mean_duration), lwd = 1, lty = 2) +
   ggplot2::geom_smooth(method = "lm", lty = 1) +
   ggplot2::theme_bw() +
-  ggplot2::labs(x = "Brood Year", y = "Duration of Egg-Take (Days)", colour = "Lineage", title = "PWS Pink Salmon: Duration of Egg-Take by Hatchery x Lineage") +
+  ggplot2::labs(x = "Brood Year", y = "Duration of Egg Take (Days)", colour = "Lineage", title = "PWS Pink Salmon: Duration of Egg Take by Hatchery x Lineage") +
   ggplot2::facet_grid(rows = dplyr::vars(lineage), cols = dplyr::vars(hatchery))
 ```
 
 # Conclusion
 
-It certainly looks like VFDA has pushed their run later over time, in both lineage. No major changes in median run timing at the 3 PWSAC hatcheries. However, there has been a contraction in the duration of egg-take at all three PWSAC hatcheries, more pronounced in the odd-lineage than the even-lineage.
+It certainly looks like VFDA has pushed their run later over time, in both lineage. No major changes in median run timing at the 3 PWSAC hatcheries. However, there has been a contraction in the duration of egg take at all three PWSAC hatcheries, more pronounced in the odd-lineage than the even-lineage.
+
+End

@@ -1,0 +1,177 @@
+---
+title: "Variation in Solomon Gulch Pink Salmon Broodsource Over Time"
+subtitle: "Has Broodsource Timing Shifted - Siwash (Odd) + Gregorieff/Vlasoff (Even) Creeks?"
+author: "Kyle Shedd"
+date: "2024-03-26"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Objective
+
+The objective of this R Notebook is to determine whether broodsource peak survey date for VFDA Solomon Gulch broodsource (data provided by Heather Scannell, PWS Seine AMB) has changed over time. 
+
+# Background
+
+Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing. Here, I will be attempting to get collection-specific run timing data that is comparable across hatchery and stream collections so we can see how run timing correlates with *lrrc9* haplotypes.
+
+# Setup
+
+Load all necessary packages, as of 2023-08-11 Kyle switched to [GCLr](https://github.com/commfish/GCLr).
+```{r setup, message=FALSE, results='hide'}
+rm(list = ls(all.names = TRUE))
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  scales,
+  janitor,
+  GCLr
+)
+
+knitr::opts_chunk$set(fig.width = 10)
+
+# source("~/R/Functions.GCL.R")  # source GCL scripts, switched to GCLr package
+.username = readLines("~/R/usr_pw.txt", n = 1)  # LOKI username
+.password = readLines("~/R/usr_pw.txt" , n = 2)[[2]]  # LOKI password
+```
+
+# Import Data
+
+## Aerial Survey
+
+I had to copy/paste the `.xlsm` into a `.csv` and change a couple of `REF` to 0
+```{r}
+(
+  aerial <-
+    readr::read_csv(file = "../data/run_timing/PWS_1962–2023_for Kyle.csv") %>%
+    janitor::clean_names() %>%
+    dplyr::mutate(
+      date = lubridate::as_date(survdate, format = "%m/%d/%Y"),
+      julian = lubridate::yday(date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
+                                 year %% 2 == 1 ~ "odd",
+                                 TRUE ~ NA_character_)
+    ) %>% 
+    dplyr::rename(district = distict)
+)
+```
+
+# Manipulate Data
+
+## Aerial
+
+### Gregorieff (Even)
+
+How many different "Gregorieff Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Greg")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the peak count date for each year.
+```{r}
+(
+  aerial_greg <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Gregor"),
+                  lineage == "even") %>%
+    dplyr::mutate(strname = "Gregorieff Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+### Vlasoff (Even)
+
+How many different "Vlasoff Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Vlaso")) %>% 
+  dplyr::count(strnum, strname)
+```
+
+Great, just the one. Now I need to get the peak count date for each year.
+```{r}
+(
+  aerial_vlasoff <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Vlaso"),
+                  lineage == "even") %>%
+    dplyr::mutate(strname = "Vlasoff Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+### Siwash (Odd)
+
+How many different "Siwash Creek" are there?
+```{r}
+aerial %>% 
+  dplyr::filter(grepl(x = strname, pattern = "Siwash")) %>% 
+  dplyr::count(district, stat_area, strnum, strname)
+```
+
+Stream number 143 (suspect 144 is a typo) is the one we want in Valdez Arm. Stream 264 is up Unakwik, near Cannery Creek Hatchery. Now I need to get the peak count date for each year.
+```{r}
+(
+  aerial_siwash <- aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Siwash"),
+                  strnum %in% 143:144,
+                  lineage == "odd") %>%
+    dplyr::mutate(strname = "Siwash Creek") %>% 
+    dplyr::group_by(strname, lineage, year) %>%
+    dplyr::filter(dplyr::n() >= 3) %>%
+    dplyr::slice_max(pstream, with_ties = FALSE) %>% 
+    dplyr::ungroup()
+)
+```
+
+Whoa, there is almost no data...I wonder if it is due to requiring at least 3 surveys?
+```{r}
+aerial %>%
+    dplyr::filter(grepl(x = strname, pattern = "Siwash"),
+                  strnum %in% 143:144,
+                  lineage == "odd") %>%
+    dplyr::mutate(strname = "Siwash Creek")
+```
+
+Oh no, they stopped surveying Siwash Creek after 1997!
+
+# Plot
+
+```{r}
+SG_source_peak_counts <- dplyr::bind_rows(aerial_greg, aerial_vlasoff, aerial_siwash) %>% 
+  dplyr::mutate(lineage = stringr::str_to_sentence(lineage),
+                strname = factor(x = strname, levels = c("Siwash Creek", "Gregorieff Creek", "Vlasoff Creek"))) %>% 
+  dplyr::group_by(strname, lineage) %>% 
+  dplyr::summarise(peak_count = mean(julian_day, na.rm = TRUE), .groups = "drop")
+
+dplyr::bind_rows(aerial_greg, aerial_vlasoff, aerial_siwash) %>% 
+  dplyr::mutate(lineage = stringr::str_to_sentence(lineage),
+                strname = factor(x = strname, levels = c("Siwash Creek", "Gregorieff Creek", "Vlasoff Creek"))) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = year, y = julian, colour = lineage)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::geom_hline(data = SG_source_peak_counts, ggplot2::aes(yintercept = peak_count), lwd = 1, lty = 2) +
+  ggplot2::geom_smooth(method = "lm", lty = 1) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(x = "Year", y = "Peak Aerial Survey Day of Year (>= 3 Surveys/Year)", colour = "Lineage", title = "Solomon Gulch Broodsource Aerial Survey Timing") +
+  ggplot2::facet_grid(rows = dplyr::vars(lineage), cols = dplyr::vars(strname))
+```
+
+# Conclusion
+
+Based on the aerial survey data, which has a LOT of caveats (days between surveys, weather, differences between surveyors, etc.), there may be a slight (but insignificant) trend in later run timing for Gregorieff and Vlasoff Creeks. That said, it is not on the same scale as the shifts in egg take at SGH.
+
+End
