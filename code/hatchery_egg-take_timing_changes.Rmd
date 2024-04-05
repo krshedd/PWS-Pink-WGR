@@ -2,7 +2,7 @@
 title: "Variation in PWS Pink Salmon Egg Take Over Time"
 subtitle: "Has Egg Take Timing Shifted?"
 author: "Kyle Shedd"
-date: "2024-03-26"
+date: "2024-03-26; updated 2024-04-05 write out cleaned eggtake data"
 output:
   html_notebook:
     theme: united
@@ -334,7 +334,21 @@ Fix dates to correct year, calculate Julian date for p50 egg take for each year.
 
 ```{r}
 eggtake_clean <- dplyr::bind_rows(eggtake_AFK_clean, eggtake_WNH_clean, eggtake_CCH_clean, eggtake_VFDA_clean)
+readr::write_csv(x = eggtake_clean, file = "../output/PWS_hatchery_eggtake_cleaned_20240405.csv")
 ```
+
+Check p50 dates
+```{r}
+eggtake_clean %>% 
+  dplyr::rowwise() %>%
+  dplyr::mutate(p50_julian_manual = floor(mean(c(start_julian, end_julian))),
+                p50_julian_check = p50_julian == p50_julian_manual) %>% 
+  dplyr::count(p50_julian_check)
+```
+
+Whew, all okay, so long as I used `floor` instead of `mean`.
+
+Sent this `PWS_hatchery_eggtake_cleaned_20240405.csv` to Lorna Wilson (PNP planning/permitting coordinator - Juneau) on 2024-04-05 to double check the excel data I received from Heather Scannel (PWS Seine AMB - Cordova) with the official PNP database. Want to make sure that I have the correct information for Will Hemstrom and Mark Christie for the WGR *lrrc9* manuscript.
 
 # Plot
 
