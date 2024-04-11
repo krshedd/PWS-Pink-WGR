@@ -2,7 +2,7 @@
 title: "Determine Collection-Specific Average Run Timing"
 subtitle: "Correlate *lrrc9* Haplotypes to Egg-take + Aerial Surveys?"
 author: "Kyle Shedd"
-date: "2023-10-17"
+date: "2023-10-17; updated 2024-04-11"
 output:
   html_notebook:
     theme: united
@@ -18,7 +18,7 @@ The objective of this R Notebook is to determine collection-specific average run
 
 # Background
 
-Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing. Here, I will be attempting to get collection-specific run timing data that is comparable across hatchery and stream collections so we can see how run timing correlates with *lrrc9* haplotypes.
+Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing. Here, I will be attempting to get collection-specific average run timing data (different from the collection dates in our whole genome study) that is comparable across hatchery and stream collections so we can see how run timing correlates with *lrrc9* haplotypes.
 
 # Setup
 
@@ -90,85 +90,30 @@ Fix date...
 
 ## Egg-take
 
-Read in the egg-take data from Heather Scannell, only includes data through 2021!
+Originally: read in the egg-take data from Heather Scannell, only includes data through 2021! `data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls`
+Now: read in cleaned egg-take data from Lorna Wilson (PNP assistant coordinator). This data `output/PWS_hatchery_eggtake_cleaned_20240410.xlsx` was based on `output/PWS_hatchery_eggtake_cleaned_20240405.csv`, created in `code/hatchery_egg-take_timing_changes.Rmd` from Heather Scannell's data. Lorna made some minor updates based on what was in the PNP ADF&G database.
 
-### VFDA
-
-**NOTE** dates are ALL formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
 ```{r}
 (
-  eggtake_VFDA <-
-    readxl::read_xls(
-      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
-      sheet = "VFDA Fecundity Data",
-      range = "A3:N44",
+  eggtake <-
+    readxl::read_excel(
+      path = "../output/PWS_hatchery_eggtake_cleaned_20240410.xlsx",
+      sheet = 1,
       col_types = c(
+        "text",
         "numeric",
-        rep("text", 2),
+        "text",
+        rep("date", 3),
         rep("numeric", 5),
-        "skip",
-        rep("date", 3),
-        rep("numeric", 2)
-      )
-    ) %>% janitor::clean_names() %>% 
-    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
-                  end_date = lubridate::as_date(egg_take_end_date),
-                  p50_date = lubridate::as_date(x50_percent_egg_take_date)) %>% 
-    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
-)
-```
-
-### AFK
-
-**NOTE** dates are ALL formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
-```{r}
-(
-  eggtake_AFK <-
-    readxl::read_xls(
-      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
-      sheet = "AFK Fecundity Data",
-      range = "A3:K51",
-      col_types = c(
-        "numeric",
-        rep("text", 2),
-        rep("numeric", 4),
-        rep("date", 3),
+        "text",
         "numeric"
-      )
-    ) %>% janitor::clean_names() %>% 
-    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
-                  end_date = lubridate::as_date(egg_take_end_date),
-                  p50_date = lubridate::as_date(x50_percent_egg_take_date),
-                  p50_julian = lubridate::yday(p50_date)) %>% 
-    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
+      ),
+      na = "NA"
+    )
 )
 ```
 
-### CCH
-
-**NOTE** dates are mostly formatted as 2010, need to look into how to strip out M/D and then rejoin with `year`, and then extract the Julian date (`yday`).
-```{r}
-(
-  eggtake_CCH <-
-    readxl::read_xls(
-      path = "../data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls",
-      sheet = "CCH Fecundity Data",
-      range = "A3:N50",
-      col_types = c(
-        "numeric",
-        rep("text", 2),
-        rep("numeric", 6),
-        rep("date", 3),
-        rep("numeric", 2)
-      )
-    ) %>% janitor::clean_names() %>% 
-    dplyr::mutate(start_date = lubridate::as_date(egg_take_start),
-                  end_date = lubridate::as_date(egg_take_end_date),
-                  p50_date = lubridate::as_date(x50_percent_egg_take_date),
-                  p50_julian = lubridate::yday(p50_date)) %>% 
-    dplyr::select(-egg_take_start, -egg_take_end_date, -x50_percent_egg_take_date)
-)
-```
+Rather than give a a rolling 10 generation average p50 date (mid-point of egg-take), I'm going to give them the p50 for each sample collection year, as well as the start/stop dates. Note than egg-take follows a fairly uniform distribution (roughly the same number of eggs collected/day), rather than a normal distribution.
 
 ## Aerial Survey
 
@@ -192,50 +137,19 @@ I had to copy/paste the `.xlsm` into a `.csv` and change a couple of `REF` to 0
 
 ## Egg-take
 
+Rather than give a a rolling 10 generation average p50 date (mid-point of egg-take) as we've done previously, I'm going to give them the p50 for each sample collection year, as well as the start/stop dates. This will help provide context for the *lrrc9* haplotype frequencies and give an idea of how representative our samples are relative to the population. Note than egg-take follows a fairly uniform distribution (roughly the same number of eggs collected/day), rather than a normal distribution.
+
 ### VFDA
 
-Fix dates to correct year, calculate Julian date for p50 egg take for each year.
 ```{r}
 (
-  eggtake_VFDA_p50 <- eggtake_VFDA %>%
-    dplyr::mutate(
-      p50_date = as.character(p50_date),
-      p50_date = stringr::str_sub(
-        string = p50_date,
-        start = 6,
-        end = -1
-      ),
-      p50_date = stringr::str_c(year, p50_date, sep = "-"),
-      p50_date = lubridate::as_date(p50_date),
-      p50_julian = lubridate::yday(p50_date),
-      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
-                                 year %% 2 == 1 ~ "odd",
-                                 TRUE ~ NA_character_)
-    ) %>%
-    dplyr::select(year, lineage, p50_date, p50_julian)
+  eggtake_VFDA_p50 <- eggtake %>%
+    dplyr::filter(hatchery == "VFDA") %>% 
+    dplyr::select(hatchery:lineage, start_julian:end_julian)
 )
 ```
 
-I'm going to take a 20-year rolling average p50 egg-take date for each VFDA collection.
-
-Testing one collection at a time.
-```{r}
-eggtake_VFDA_p50 %>%
-  dplyr::mutate(
-    location = "VFDA",
-    collection_year = 2015,
-    collection_lineage = "odd"
-  ) %>%
-  dplyr::filter(
-    lineage == collection_lineage,
-    dplyr::between(year, collection_year - 10, collection_year +
-                     10)
-  ) %>%
-  dplyr::group_by(location, collection_year, collection_lineage) %>%
-  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
-```
-
-Vectorize to loop through all 4 VFDA collections.
+Join year-specifc egg-take dates with our VFDA collections.
 ```{r}
 (
   VFDA_p50 <- collections %>%
@@ -244,65 +158,23 @@ Vectorize to loop through all 4 VFDA collections.
     dplyr::left_join(
       eggtake_VFDA_p50 %>%
         dplyr::mutate(location = "VFDA"),
-      by = "location",
+      by = c("location", "year", "lineage"),
       suffix = c("", "_eggtake")
-    ) %>%
-    dplyr::group_by(location, year, lineage) %>%
-    dplyr::filter(
-      lineage_eggtake == lineage,
-      dplyr::between(year_eggtake, year - 10, year + 10)
-    ) %>%
-    dplyr::summarise(
-      p50_julian  = mean(p50_julian, na.rm = TRUE),
-      .groups = "drop"
     )
 )
 ```
 
 ### AFK
 
-Fix dates to correct year, calculate Julian date for p50 egg take for each year.
 ```{r}
 (
-  eggtake_AFK_p50 <- eggtake_AFK %>%
-    dplyr::mutate(
-      p50_date = as.character(p50_date),
-      p50_date = stringr::str_sub(
-        string = p50_date,
-        start = 6,
-        end = -1
-      ),
-      p50_date = stringr::str_c(year, p50_date, sep = "-"),
-      p50_date = lubridate::as_date(p50_date),
-      p50_julian = lubridate::yday(p50_date),
-      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
-                                 year %% 2 == 1 ~ "odd",
-                                 TRUE ~ NA_character_)
-    ) %>%
-    dplyr::select(year, lineage, p50_date, p50_julian)
+  eggtake_AFK_p50 <- eggtake %>%
+    dplyr::filter(hatchery == "AFK") %>% 
+    dplyr::select(hatchery:lineage, start_julian:end_julian)
 )
 ```
 
-I'm going to take a 20-year rolling average p50 egg-take date for each AFK collection.
-
-Testing one collection at a time.
-```{r}
-eggtake_AFK_p50 %>%
-  dplyr::mutate(
-    location = "AFK",
-    collection_year = 1991,
-    collection_lineage = "odd"
-  ) %>%
-  dplyr::filter(
-    lineage == collection_lineage,
-    dplyr::between(year, collection_year - 10, collection_year +
-                     10)
-  ) %>%
-  dplyr::group_by(location, collection_year, collection_lineage) %>%
-  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
-```
-
-Vectorize to loop through all 4 AFK collections.
+Join year-specifc egg-take dates with our AFK collections.
 ```{r}
 (
   AFK_p50 <- collections %>%
@@ -311,65 +183,23 @@ Vectorize to loop through all 4 AFK collections.
     dplyr::left_join(
       eggtake_AFK_p50 %>%
         dplyr::mutate(location = "AFK"),
-      by = "location",
+      by = c("location", "year", "lineage"),
       suffix = c("", "_eggtake")
-    ) %>%
-    dplyr::group_by(location, year, lineage) %>%
-    dplyr::filter(
-      lineage_eggtake == lineage,
-      dplyr::between(year_eggtake, year - 10, year + 10)
-    ) %>%
-    dplyr::summarise(
-      p50_julian  = mean(p50_julian, na.rm = TRUE),
-      .groups = "drop"
     )
 )
 ```
 
 ### CCH
 
-Fix dates to correct year, calculate Julian date for p50 egg take for each year.
 ```{r}
 (
-  eggtake_CCH_p50 <- eggtake_CCH %>%
-    dplyr::mutate(
-      p50_date = as.character(p50_date),
-      p50_date = stringr::str_sub(
-        string = p50_date,
-        start = 6,
-        end = -1
-      ),
-      p50_date = stringr::str_c(year, p50_date, sep = "-"),
-      p50_date = lubridate::as_date(p50_date),
-      p50_julian = lubridate::yday(p50_date),
-      lineage = dplyr::case_when(year %% 2 == 0 ~ "even",
-                                 year %% 2 == 1 ~ "odd",
-                                 TRUE ~ NA_character_)
-    ) %>%
-    dplyr::select(year, lineage, p50_date, p50_julian)
+  eggtake_CCH_p50 <- eggtake %>%
+    dplyr::filter(hatchery == "CCH") %>% 
+    dplyr::select(hatchery:lineage, start_julian:end_julian)
 )
 ```
 
-I'm going to take a 20-year rolling average p50 egg-take date for each CCH collection.
-
-Testing one collection at a time.
-```{r}
-eggtake_CCH_p50 %>%
-  dplyr::mutate(
-    location = "CCH",
-    collection_year = 1991,
-    collection_lineage = "odd"
-  ) %>%
-  dplyr::filter(
-    lineage == collection_lineage,
-    dplyr::between(year, collection_year - 10, collection_year +
-                     10)
-  ) %>%
-  dplyr::group_by(location, collection_year, collection_lineage) %>%
-  dplyr::summarise(mean(p50_julian, na.rm = TRUE))
-```
-
-Vectorize to loop through all 4 CCH collections.
+Join year-specifc egg-take dates with our CCH collections.
 ```{r}
 (
   CCH_p50 <- collections %>%
@@ -378,22 +208,15 @@ Vectorize to loop through all 4 CCH collections.
     dplyr::left_join(
       eggtake_CCH_p50 %>%
         dplyr::mutate(location = "Cannery Creek"),
-      by = "location",
+      by = c("location", "year", "lineage"),
       suffix = c("", "_eggtake")
-    ) %>%
-    dplyr::group_by(location, year, lineage) %>%
-    dplyr::filter(
-      lineage_eggtake == lineage,
-      dplyr::between(year_eggtake, year - 10, year + 10)
-    ) %>%
-    dplyr::summarise(
-      p50_julian  = mean(p50_julian, na.rm = TRUE),
-      .groups = "drop"
     )
 )
 ```
 
 ## Aerial
+
+Get the peak count date (p50) for years with at least 3 surveys. Take a rolling 10 generation average.
 
 ### Duck
 
@@ -783,16 +606,30 @@ Get the average date for each collection based on individual data.
 Join in the individual level average dates with the aerial survey and p50 egg-take 20 year rolling average dates.
 ```{r}
 (
-  colletions_indiv_avg_date %>%
-    dplyr::left_join(y = p50, by = c("location", "year", "lineage")) %>%
-    readr::write_csv(file = "../output/run_timing.csv")
+  run_timing <- colletions_indiv_avg_date %>%
+    dplyr::left_join(y = p50 %>% dplyr::select(-silly, -hatchery), by = c("location", "year", "lineage"))
 )
 ```
 
+# Write Output
+
+Output has:  
+
+    `collection_julian` = the average collection date (some collections are from a single date, others the whole season, up to 42 days)
+    `start_julian` = first day of egg-take in the hatchery for that year
+    `p50_julian` = either 1) mid-point of egg-take in the hatchery for that year, note that egg-take is fairly uniform (i.e. same number of eggs each day), or 2) 10-generation rolling average of peak aerial survey count for years w/ >= 3 surveys, note aerial survey data has lots of caveats (weather delays, etc.)
+    `end_julian` = last day of egg-take in the hatchery for that year
+
+This is different than what I'd previously provided.
+```{r}
+ run_timing %>%
+    readr::write_csv(file = "../output/run_timing.csv")
+```
+
+Going to go into this and manually add notes and a README and save as an `.xlsx`.
+
 # Conclusions
 
-Wait...why don't we just use collection date (or average collection date) for run timing???
-
-Make sure to join in `collection_julian` as well, in addition to the 20-year average run timing of each system!
+Sometimes, our hatchery collections came from the beginning or end of egg-take in a given year.
 
 End

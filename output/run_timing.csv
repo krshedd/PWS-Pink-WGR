@@ -1,33 +1,33 @@
-row,sample_unit_no,objective,silly,year,lineage,location,location_type,location_descriptor,collection_julian,p50_julian
-1,1,A,PAFK94H,1994,even,AFK,hatchery,egg take,253,248.6
-2,2,A,PAFK14,2014,even,AFK,hatchery,egg take,245,245.44444444444446
-3,3,A,PAFK91H,1991,odd,AFK,hatchery,egg take,255,247.7
-4,4,A,PAFK13,2013,odd,AFK,hatchery,egg take,242,244.9
-5,5,A,PCANN14,2014,even,Cannery Creek,hatchery,egg take,238,247
-6,6,A,PCANN91H,1991,odd,Cannery Creek,hatchery,egg take,255,249
-7,7,A,PCANN15,2015,odd,Cannery Creek,hatchery,egg take,252,247.33333333333334
-8,8,A,PVFDA94H,1994,even,VFDA,hatchery,egg take,224,215.0909090909091
-9,9,A,PVFDA14,2014,even,VFDA,hatchery,egg take,NA,221.66666666666666
-10,10,A,PVFDE91H,1991,odd,VFDA,hatchery,egg take,220,213.72727272727272
-11,11,A,PVFDA15,2015,odd,VFDA,hatchery,egg take,225,222
-12,12,A,PDUCK94T,1994,even,Duck River,source,middle tidal,232,242.0909090909091
-13,13,A,PDUCK14E,2014,even,Duck River,source,early upstream,216,240.6
-14,13,A,PDUCK14L,2014,even,Duck River,source,late upstream,252,240.6
-15,14,A,PERBE91T,1991,odd,Erb Creek,source,early tidal,216,231.8181818181818
-16,14,A,PERBL91T,1991,odd,Erb Creek,source,late tidal,248,231.8181818181818
-17,15,A,PERB17,2017,odd,Erb Creek,source,upstream and intertidal,239.88888888888889,226.44444444444446
-18,16,A,PGREG94,1994,even,Gregorieff Creek,source,NA,NA,227.1818181818182
-19,17,A,PGREG14E,2014,even,Gregorieff Creek,source,early upstream,216,231
-20,17,A,PGREG14L,2014,even,Gregorieff Creek,source,late upstream,252,231
-21,18,A,PDUCM91T,1991,odd,Duck River,source,middle tidal,232,237.9090909090909
-22,19,A,PDUCK13,2013,odd,Duck River,source,upstream,230,233.72727272727272
-23,20,B,PSTOCK16,2016,even,Stockdale Creek,wild,upstream and intertidal,240.02777777777777,227.25
-24,21,B,PSTOCK16,2016,even,Stockdale Creek,stray,upstream and intertidal,246.72222222222223,227.25
-25,22,B,PSTOCK15,2015,odd,Stockdale Creek,wild,upstream and intertidal,240.05714285714285,225.8
-26,23,B,PSTOCK15,2015,odd,Stockdale Creek,stray,upstream and intertidal,249.85714285714286,225.8
-27,24,B,PHOGAN16,2016,even,Hogan Bay Creek,wild,upstream and intertidal,246,232.75
-28,25,B,PHOGAN16,2016,even,Hogan Bay Creek,stray,upstream and intertidal,247.4,232.75
-29,26,B,PHOGAN15,2015,odd,Hogan Bay Creek,wild,upstream and intertidal,230.22222222222223,225.7
-30,27,B,PHOGAN15,2015,odd,Hogan Bay Creek,stray,upstream and intertidal,248.02777777777777,225.7
-31,28,B,PSPRIN14,2014,even,Spring Creek,wild,upstream and intertidal,227.6,230.5
-32,29,B,PSPRIN15,2015,odd,Spring Creek,wild,upstream and intertidal,224.63888888888889,219.6
+row,sample_unit_no,objective,silly,year,lineage,location,location_type,location_descriptor,collection_julian,start_julian,p50_julian,end_julian
+1,1,A,PAFK94H,1994,even,AFK,hatchery,egg take,253,235,244,253
+2,2,A,PAFK14,2014,even,AFK,hatchery,egg take,245,233,240,248
+3,3,A,PAFK91H,1991,odd,AFK,hatchery,egg take,255,237,246,256
+4,4,A,PAFK13,2013,odd,AFK,hatchery,egg take,242,233,240,247
+5,5,A,PCANN14,2014,even,Cannery Creek,hatchery,egg take,238,238,247,256
+6,6,A,PCANN91H,1991,odd,Cannery Creek,hatchery,egg take,255,236,246,257
+7,7,A,PCANN15,2015,odd,Cannery Creek,hatchery,egg take,252,241,250,259
+8,8,A,PVFDA94H,1994,even,VFDA,hatchery,egg take,224,203,212,222
+9,9,A,PVFDA14,2014,even,VFDA,hatchery,egg take,NA,210,221,232
+10,10,A,PVFDE91H,1991,odd,VFDA,hatchery,egg take,220,204,221,239
+11,11,A,PVFDA15,2015,odd,VFDA,hatchery,egg take,225,208,221,234
+12,12,A,PDUCK94T,1994,even,Duck River,source,middle tidal,232,NA,242.0909090909091,NA
+13,13,A,PDUCK14E,2014,even,Duck River,source,early upstream,216,NA,240.6,NA
+14,13,A,PDUCK14L,2014,even,Duck River,source,late upstream,252,NA,240.6,NA
+15,14,A,PERBE91T,1991,odd,Erb Creek,source,early tidal,216,NA,231.8181818181818,NA
+16,14,A,PERBL91T,1991,odd,Erb Creek,source,late tidal,248,NA,231.8181818181818,NA
+17,15,A,PERB17,2017,odd,Erb Creek,source,upstream and intertidal,239.88888888888889,NA,226.44444444444446,NA
+18,16,A,PGREG94,1994,even,Gregorieff Creek,source,NA,NA,NA,227.1818181818182,NA
+19,17,A,PGREG14E,2014,even,Gregorieff Creek,source,early upstream,216,NA,231,NA
+20,17,A,PGREG14L,2014,even,Gregorieff Creek,source,late upstream,252,NA,231,NA
+21,18,A,PDUCM91T,1991,odd,Duck River,source,middle tidal,232,NA,237.9090909090909,NA
+22,19,A,PDUCK13,2013,odd,Duck River,source,upstream,230,NA,233.72727272727272,NA
+23,20,B,PSTOCK16,2016,even,Stockdale Creek,wild,upstream and intertidal,240.02777777777777,NA,227.25,NA
+24,21,B,PSTOCK16,2016,even,Stockdale Creek,stray,upstream and intertidal,246.72222222222223,NA,227.25,NA
+25,22,B,PSTOCK15,2015,odd,Stockdale Creek,wild,upstream and intertidal,240.05714285714285,NA,225.8,NA
+26,23,B,PSTOCK15,2015,odd,Stockdale Creek,stray,upstream and intertidal,249.85714285714286,NA,225.8,NA
+27,24,B,PHOGAN16,2016,even,Hogan Bay Creek,wild,upstream and intertidal,246,NA,232.75,NA
+28,25,B,PHOGAN16,2016,even,Hogan Bay Creek,stray,upstream and intertidal,247.4,NA,232.75,NA
+29,26,B,PHOGAN15,2015,odd,Hogan Bay Creek,wild,upstream and intertidal,230.22222222222223,NA,225.7,NA
+30,27,B,PHOGAN15,2015,odd,Hogan Bay Creek,stray,upstream and intertidal,248.02777777777777,NA,225.7,NA
+31,28,B,PSPRIN14,2014,even,Spring Creek,wild,upstream and intertidal,227.6,NA,230.5,NA
+32,29,B,PSPRIN15,2015,odd,Spring Creek,wild,upstream and intertidal,224.63888888888889,NA,219.6,NA
