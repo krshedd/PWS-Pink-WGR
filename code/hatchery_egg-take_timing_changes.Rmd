@@ -2,7 +2,7 @@
 title: "Variation in PWS Pink Salmon Egg Take Over Time"
 subtitle: "Has Egg Take Timing Shifted?"
 author: "Kyle Shedd"
-date: "2024-03-26; updated 2024-04-05 write out cleaned eggtake data"
+date: "2024-03-26; updated 2024-04-05 write out cleaned eggtake data; update 2024-04-11 with Lorna's cleaned data"
 output:
   html_notebook:
     theme: united
@@ -350,6 +350,54 @@ Whew, all okay, so long as I used `floor` instead of `mean`.
 
 Sent this `PWS_hatchery_eggtake_cleaned_20240405.csv` to Lorna Wilson (PNP planning/permitting coordinator - Juneau) on 2024-04-05 to double check the excel data I received from Heather Scannel (PWS Seine AMB - Cordova) with the official PNP database. Want to make sure that I have the correct information for Will Hemstrom and Mark Christie for the WGR *lrrc9* manuscript.
 
+Originally: read in the egg take data from Heather Scannell, only includes data through 2021! `data/run_timing/PWS Hatchery Performance Data - Working Data Set_hs_krs.xls`
+Now: read in cleaned egg take data from Lorna Wilson (PNP assistant coordinator). This data `output/PWS_hatchery_eggtake_cleaned_20240410.xlsx` was based on `output/PWS_hatchery_eggtake_cleaned_20240405.csv`, created in `code/hatchery_egg-take_timing_changes.Rmd` from Heather Scannell's data. Lorna made some minor updates based on what was in the PNP ADF&G database.
+
+# Re-Import Cleaned Data
+
+```{r}
+(
+  eggtake <-
+    readxl::read_excel(
+      path = "../output/PWS_hatchery_eggtake_cleaned_20240410.xlsx",
+      sheet = 1,
+      col_types = c(
+        "text",
+        "numeric",
+        "text",
+        rep("date", 3),
+        rep("numeric", 5),
+        "text",
+        "numeric"
+      ),
+      na = "NA"
+    )
+)
+```
+
+Check out founding brood years.
+```{r}
+eggtake %>% 
+  dplyr::filter(`Founding brood?` == 1)
+```
+
+Need to fix AFK 1976, take earliest start and latest end dates.
+```{r}
+eggtake_clean <- eggtake %>% 
+  dplyr::select(hatchery:duration) %>% 
+  dplyr::filter(year == 1976 & hatchery == "AFK") %>% 
+  dplyr::mutate(start_date = min(start_date),
+                end_date = max(end_date),
+                start_julian = lubridate::yday(start_date),
+                end_julian = lubridate::yday(end_date),
+                p50_julian = floor((start_julian + end_julian) / 2),
+                duration = end_julian - start_julian + 1,
+                p50_date = lubridate::as_date(p50_julian, origin = "1976-01-01")) %>% 
+  dplyr::distinct() %>% 
+  dplyr::bind_rows(eggtake %>% dplyr::filter(!(year == 1976 & hatchery == "AFK"))) %>% 
+  dplyr::arrange(hatchery, year)
+```
+
 # Plot
 
 Plot start/stop egg take dates over time as ribbon charts.
@@ -383,6 +431,7 @@ eggtake_duration_mean <- eggtake_clean %>%
 eggtake_clean %>% 
   dplyr::mutate(lineage = stringr::str_to_sentence(lineage),
                 hatchery = factor(x = hatchery, levels = c("VFDA", "AFK", "WNH", "CCH"))) %>% 
+  dplyr::filter(!is.na(duration)) %>% 
   ggplot2::ggplot(ggplot2::aes(x = year, y = duration, colour = lineage)) +
   ggplot2::geom_line(lwd = 1) +
   ggplot2::geom_hline(data = eggtake_duration_mean, ggplot2::aes(yintercept = mean_duration), lwd = 1, lty = 2) +
