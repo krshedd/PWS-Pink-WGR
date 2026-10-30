@@ -1,0 +1,998 @@
+---
+title: "PWS Pink Salmon Run Timing"
+subtitle: "Ocean Entry vs. Aerial Survey"
+author: "Kyle Shedd"
+date: "2026-10-27;last opened: `r Sys.Date()`"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Objective
+
+The objective of this R Notebook is to provide average run tiiming curves for PWS pink salmon to see how it correlates to *lrrc9* haplotypes. We'll be using the ocean sampling data from the AHRP 2013-2015 reported in [Knudsen et al. 2021](https://doi.org/10.1002/mcf2.10134) and average peak aerial survey stream counts for stream collections (data provided by Jenni Morella, PWS Research AMB). This is different from the previous `run_timing.Rmd`, which focused on collection-specific run timing to see where our WGR samples fit in against their run timing (i.e., did they sample the early, mid, or late run for a given stock?). Ultimately I will provide them all three sources of data:
+
+  1) previous collection-specific data from `run_timing.Rmd`,
+  2) escapement run timing from aerial survyes, both by district and across PWS for each lineage, and 
+  3) ocean test fishing data from PWS entrances 2013-2015
+
+# Background
+
+Will Hemstrom and Mark Christie at Purdue University have found a large-effect locus (*lrrc9*) for hatchery x hatchery and hatchery x natural comparisons, but not in natural x natural comparisons. Independently, and beforehand, Wes Larson and Pat Barry found strong evidence that *lrrc9* is tied to run timing in Auke Creek pink salmon. Based on their work and the pairwise Fst outlier data from Will (most of which involve VFDA hatchery, known early run timing), we have strong reason to believe that this region of the genome is associated with run timing.
+
+# Setup
+
+Load all necessary packages, as of 2023-08-11 Kyle switched to [GCLr](https://github.com/commfish/GCLr).
+```{r setup, message=FALSE, results='hide'}
+rm(list = ls(all.names = TRUE))
+
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  scales,
+  janitor,
+  GCLr,
+  slider
+)
+
+knitr::opts_chunk$set(fig.width = 10)
+
+# source("~/R/Functions.GCL.R")  # source GCL scripts, switched to GCLr package
+.username = readLines("~/R/usr_pw.txt", n = 1)  # LOKI username
+.password = readLines("~/R/usr_pw.txt" , n = 2)[[2]]  # LOKI password
+```
+
+# Import Data
+
+## Ocean Sampling
+
+This data came from the AHRP (aka HWI) ocean survey data from 2013-2015, which is available from the department [website](https://mtalab.adfg.alaska.gov/Hatchery_Wild_Interaction/HWIReports.aspx) with login credentials.
+```{r}
+(
+  ocean <-
+    readr::read_lines(file = "../data/run_timing/Ocean Report-560.csv", skip = 11) |>
+    stringr::str_replace_all('5 1/8" panel', '5 1/8"" panel') |>  # quotation marks are not escaped...
+    stringr::str_replace_all('4 3/8" panel', '4 3/8"" panel') |>  # quotation marks are not escaped...
+    stringr::str_remove(",$") |>  # each row of data has an extra "," at the end of the row that causes parsing issues
+    paste(collapse = "\n") |>
+    readr::read_csv() |>
+    janitor::clean_names()
+)
+```
+
+
+How many samples per year? Cross-check with Knudsen et al. 2021 Table 2.
+```{r}
+ocean |> dplyr::count(year)
+```
+
+2014 matches (1,615) and 2015 are pretty close (2,280 vs. 2,278), but 2013 is way off (1,554 vs. 515?!?!).
+```{r}
+ocean |> dplyr::count(year, mark_present)
+```
+
+I see 1,480 samples w/ origin data for 2013 out of a total of 1,554 samples. Looking at the [KNB data repository](https://knb.ecoinformatics.org/view/doi%3A10.5063%2FF1QV3JXF) for Knudsen et al. 2021, `Knudsen_et_al__MCF_PWS_ocean_PINK_GLM_FINAL9_10_20.csv` shows 1,464 pink samples for 2013, which is at least a bit closer to what I was seeing.
+
+On 2026-10-27 I realized that the `ocean` data was missing otolith reads for 2014 and 2015. I spoke with Jenni Morella, Cordova Research Biologist, and she was able to pull their data to join `otolith_tray_number` with the otolith lab's `SampleID`, however, I still do not have the otolith reads...
+
+2026-10-28 I reached out to Pete Rand (PWSSC) to see if he has the raw ocean test fish data...
+
+Read in the `otolith_tray_number` to `sample_id` join info from Jenni.
+```{r}
+(
+  ocean_data_to_join_2013 <- 
+    readxl::read_xlsx(path = "../data/run_timing/HWI_Ocean_data to join.xlsx", sheet = "2013", skip = 1) |> 
+    janitor::clean_names()
+)
+
+(
+  ocean_data_to_join_2014 <- 
+    readxl::read_xlsx(path = "../data/run_timing/HWI_Ocean_data to join.xlsx", sheet = "2014", skip = 1) |> 
+    janitor::clean_names()
+)
+
+(
+  ocean_data_to_join_2015 <- 
+    readxl::read_xlsx(path = "../data/run_timing/HWI_Ocean_data to join.xlsx", sheet = "2015", skip = 1) |> 
+    janitor::clean_names()
+)
+
+ocean_data_to_join <- dplyr::bind_rows(ocean_data_to_join_2013,
+                                       ocean_data_to_join_2014,
+                                       ocean_data_to_join_2015) |> 
+  dplyr::mutate(sample_date = lubridate::as_date(sample_date))
+
+rm(ocean_data_to_join_2013, ocean_data_to_join_2014, ocean_data_to_join_2015)  # clean up
+```
+
+Are all the `tray_number` in the join data in the HWI-ocean data?
+```{r}
+ocean |>
+  # dplyr::filter(year %in% 2014:2015) |>  # years w/ missing otolith data
+  dplyr::count(otolith_tray_number) |>
+  dplyr::left_join(
+    y = ocean_data_to_join |> dplyr::select(tray_number, number_sampled, sample_id),
+    by = dplyr::join_by(otolith_tray_number == tray_number)
+  ) |> 
+  dplyr::mutate(diff = n - number_sampled) |>  # sample size discrepancy
+  dplyr::filter(diff != 0)  # 
+```
+
+Okay, just a few discrepancies, nothing too major.
+
+How many unique otolith trays per year in `ocean`?
+```{r}
+ocean |> 
+  dplyr::distinct(otolith_tray_number, year) |> 
+  dplyr::count(year)
+```
+
+How many unqiue otolith trays per year in Jenni's data?
+```{r}
+ocean_data_to_join |> 
+  dplyr::mutate(year = lubridate::year(sample_date)) |> 
+  dplyr::distinct(tray_number, year) |> 
+  dplyr::count(year)
+```
+
+Gah, why does Jenni's data have more otolith trays than the HWI contractor data?!?! Oh, it's because ADF&G was running separate test fisheries.
+
+2026-10-28 I passed along Jenni's join data to Eric L. to try and get the otolith read data.
+
+Get otolith read data from Eric Lardizabal.
+```{r}
+(
+  ocean_otos <- readxl::read_xlsx(path = "../data/run_timing/PwsOtoDataExportForKyle-Prod.xlsx", sheet = "Data") |>
+    janitor::clean_names()
+)
+```
+
+How many specimens per year?
+```{r}
+ocean_otos |> 
+  dplyr::count(year)
+```
+
+Hrmm, that is more than there should be...but likely because it includes all of Jenni's ADF&G Test Fishery samples as well.
+
+Get the ocean CPUE data from the Knudsen et al. 2021 [KNB](https://knb.ecoinformatics.org/view/doi%3A10.5063%2FF1QV3JXF)
+```{r}
+(
+  CPUE <- readr::read_csv("../data/run_timing/Knudsen_et_al__MCF_PWS_ocean_CPUE_2013_2015_FINAL9_10_20.csv") |> 
+    janitor::clean_names()
+)
+```
+
+## Aerial Survey
+
+I had to copy/paste the `.xlsm` into a `.csv` and change a couple of `REF` to 0.
+```{r}
+(
+  aerial <-
+    readr::read_csv(file = "../data/run_timing/PWS_1962–2023_for Kyle.csv", na = c("", "NA", "#N/A")) %>%
+    janitor::clean_names() %>%
+    dplyr::mutate(
+      date = lubridate::as_date(survdate, format = "%m/%d/%Y"),
+      julian = lubridate::yday(date),
+      lineage = dplyr::case_when(year %% 2 == 0 ~ "Even",
+                                 year %% 2 == 1 ~ "Odd",
+                                 TRUE ~ NA_character_)
+    ) |> 
+    dplyr::rename(district = distict)
+)
+```
+
+Jenni Morella sent the 2024-2026 aerial survey data, separately.
+```{r}
+aerial_2024 <- readr::read_csv(file = "../data/run_timing/PWS Chum Pink Raw Counts Export 20240910.csv") |>
+  janitor::clean_names() |> 
+  dplyr::mutate(survey_date = lubridate::as_date(survey_date, format = "%m/%d/%Y"))
+aerial_2025 <- readr::read_csv(file = "../data/run_timing/PWS Chum Pink Raw Counts Export 2025.csv") |>
+  janitor::clean_names()
+aerial_2026 <- readr::read_csv(file = "../data/run_timing/PWS Chum Pink Raw Counts Export 2026.csv", col_select = 1:13) |>
+  janitor::clean_names() |> 
+  dplyr::mutate(survey_date = lubridate::as_date(survey_date, format = "%m/%d/%Y"))
+
+(
+  aerial_2024_2026 <- dplyr::bind_rows(aerial_2024, aerial_2025, aerial_2026)
+)
+
+rm(aerial_2024, aerial_2025, aerial_2026)
+```
+
+# Manipulate Data
+
+## Ocean
+
+Confirm all pinks
+```{r}
+ocean_mod <- ocean |> 
+  dplyr::mutate(date = as.Date(haul_date, format = "%m/%d/%Y"),
+                julian = lubridate::yday(date),
+                origin = dplyr::case_when(is.na(mark_present) ~ NA_character_,
+                                          mark_present == "N" ~ "Natural",
+                                          mark_present == "Y" ~ hatchery))
+
+ocean_mod |> 
+  dplyr::count(species, year, mark_present, origin)
+```
+
+Gah!!! There is no otolith data for 2014 or 2015...
+
+Jenni Morella is going to work on getting the origin data for 2014 and 2015. Their database uses a different `Sample ID`, but they recorded the `Tray ID`, which should match up to the `otolith_tray_number`.
+
+### Join Missing 2014-2015 Otolith Data
+
+Confirm that we can match up `tray_number` and `sample_id`, pick one at random from 2013 so it already has otolith data.
+```{r}
+ocean_data_to_join |> dplyr::filter(tray_number == 200)
+
+ocean_otos |> dplyr::filter(sample_id == 201377077)
+```
+
+Test join.
+```{r}
+ocean |> dplyr::filter(otolith_tray_number == 200) |> 
+  dplyr::select(otolith_tray_number, otolith_cell, mark_present, mark_id)
+
+ocean |> 
+  dplyr::distinct(otolith_tray_number, otolith_cell, mark_present, mark_id) |> 
+  dplyr::left_join(y = ocean_data_to_join, by = dplyr::join_by(otolith_tray_number == tray_number))
+```
+
+Looks good, but need to convert from `otolith_cell` (A01, A02, ... H12) in the `ocean` data to specimen_id (001, 002, ... 096) in `ocean_otos` data.
+```{r}
+(
+  oto_cell_decoder <- dplyr::tibble(
+    otolith_cell = paste0(
+      rep(LETTERS[1:8], each = 12), 
+      rep(
+        stringr::str_pad(
+          string = 1:12,
+          width = 2,
+          side = "left",
+          pad = "0"
+        ), 8)
+      ),
+    specimen_id = stringr::str_pad(
+      string = 1:96,
+      width = 3,
+      side = "left",
+      pad = "0"
+    )
+  )
+)
+```
+
+Prior to joining, update `ocean_otos` columns to match `ocean_mod` for `mark_present` and `hatchery`.
+```{r}
+ocean_mod |> 
+  dplyr::count(mark_present, mark_id, hatchery)
+```
+
+Modify `ocean_otos` to fix `mark_present` and `sample_id`, and add `hatchery`.
+```{r}
+ocean_otos_mod <- ocean_otos |> 
+  dplyr::mutate(mark_present = dplyr::case_when(mark_present == 0 ~ "N",
+                                                mark_present == -1 ~ "Y"),
+                hatchery = dplyr::case_when(stringr::str_detect(mark_id, "AFK") ~ "A F KOERNIG",
+                                            stringr::str_detect(mark_id, "CCH") ~ "CANNERY CREEK",
+                                            stringr::str_detect(mark_id, "SGH") ~ "SOLOMON GULCH",
+                                            stringr::str_detect(mark_id, "WNH") ~ "WALLY NOERENBERG"),
+                sample_id = as.numeric(sample_id))
+```
+
+Inspect data sources to figure out how to join.
+```{r}
+glimpse(ocean)
+glimpse(ocean_data_to_join)
+glimpse(ocean_otos)
+```
+Join!
+```{r}
+(
+  ocean_join <- ocean_mod |>
+    dplyr::left_join(y = oto_cell_decoder, by = dplyr::join_by(otolith_cell)) |>  # convert oto cell to specimen ID (i.e., A01 to 001)
+    dplyr::left_join(
+      y = ocean_data_to_join,
+      by = dplyr::join_by(otolith_tray_number == tray_number),
+      suffix = c("", "_join")
+    ) |>  # convert tray number to sample id
+    dplyr::left_join(
+      y = ocean_otos_mod,
+      by = dplyr::join_by(sample_id, specimen_id),
+      suffix = c("", "_join")
+    ) |> 
+    dplyr::mutate(origin = dplyr::case_when(is.na(mark_present_join) ~ NA_character_,
+                                          mark_present_join == "N" ~ "Natural",
+                                          mark_present_join == "Y" ~ hatchery_join))
+)
+```
+
+Verify that all existing 2013 otolith reads match.
+```{r}
+ocean_join |> 
+  dplyr::filter(year == 2013,
+                !is.na(mark_present)) |> 
+  dplyr::summarise(year_identical = identical(year, year_join),
+                   mark_present_identical = identical(mark_present, mark_present_join),
+                   mark_id_identical = identical(mark_id, mark_id_join),
+                   hatchery_identical = identical(hatchery, hatchery_join))
+```
+
+Well that's not great.
+```{r}
+ocean_join |> 
+  dplyr::filter(year == 2013,
+                !is.na(mark_present)) |> 
+  dplyr::mutate(year_identical = (year == year_join) | (is.na(year) & is.na(year_join)),
+                mark_present_identical = (mark_present == mark_present_join) | (is.na(mark_present) & is.na(mark_present_join)),
+                mark_id_identical = (mark_id == mark_id_join) | (is.na(mark_id) & is.na(mark_id_join)),
+                hatchery_identical = (hatchery == hatchery_join) | (is.na(hatchery) & is.na(hatchery_join))) |> 
+  dplyr::count(year_identical,
+               mark_present_identical,
+               mark_id_identical,
+               hatchery_identical)
+```
+
+Okay, so perhaps it's the `NA` for most, but there is also a `mark_present` discrepancy.
+```{r}
+ocean_join |> 
+  dplyr::filter(year == 2013) |> 
+  dplyr::count(year, year_join)
+```
+
+Okay, got it, there are 3 samples missing data.
+```{r}
+ocean_join |> 
+  dplyr::filter(year == 2013,
+                is.na(year_join))
+```
+
+How about the 2 samples with different reads?
+```{r}
+ocean_join |> 
+  dplyr::filter(year == 2013,
+                mark_present != mark_present_join)
+```
+
+Maybe those got flip flopped? Regardless, pretty small potatoes.
+
+### Run Timing Distributions
+
+#### Raw Counts
+
+Run timing distributions for 2013 by origin. Note that this is **NOT** scaled by CPUE.
+```{r}
+ocean |> 
+  dplyr::mutate(date = as.Date(haul_date, format = "%m/%d/%Y"),
+                julian = lubridate::yday(date),
+                origin = dplyr::case_when(is.na(mark_present) ~ NA_character_,
+                                          mark_present == "N" ~ "Natural",
+                                          mark_present == "Y" ~ hatchery)) |> 
+  dplyr::filter(!is.na(origin)) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin)) +
+  ggplot2::geom_density(lwd = 2, adjust = 2) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Density by Origin in 2013",
+                x = "Julian Date",
+                y = "Density",
+                colour = "Origin")
+```
+
+Compare to the join data.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2013) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin)) +
+  ggplot2::geom_density(lwd = 2, adjust = 2) +
+  ggplot2::xlim(lubridate::as_date(c("2013-05-15", "2013-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Density by Origin in 2013",
+                x = "Julian Date",
+                y = "Density",
+                colour = "Origin")
+```
+
+It's identical. Now 2014.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2014) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin)) +
+  ggplot2::geom_density(lwd = 2, adjust = 2) +
+  ggplot2::xlim(lubridate::as_date(c("2014-05-15", "2014-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Density by Origin in 2014",
+                x = "Julian Date",
+                y = "Density",
+                colour = "Origin")
+```
+
+Now 2015.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2015) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin)) +
+  ggplot2::geom_density(lwd = 2, adjust = 2) +
+  ggplot2::xlim(lubridate::as_date(c("2015-05-15", "2015-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Density by Origin in 2015",
+                x = "Julian Date",
+                y = "Density",
+                colour = "Origin")
+```
+
+#### CPUE
+
+Get daily, average pink salmon CPUE to scale proportions
+```{r}
+CPUE_mod <- CPUE |> 
+  dplyr::mutate(date = lubridate::as_date(date, format = "%m/%d/%y")) |> 
+  dplyr::distinct(date, avg_pink_cpue)
+```
+
+Get daily proportions by origin, and multiply by CPUE.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2013) |> 
+  dplyr::count(year_join, date, origin) |> 
+  dplyr::group_by(year_join, date) |> 
+  dplyr::mutate(p = n / sum(n)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = CPUE_mod, by = dplyr::join_by(date)) |> 
+  dplyr::mutate(origin_cpue = p * avg_pink_cpue) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, y = origin_cpue, colour = origin)) +
+  ggplot2::geom_line(lwd = 2) +
+  ggplot2::xlim(lubridate::as_date(c("2013-05-15", "2013-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Origin-specific CPUE 2013") +
+  ggplot2::facet_grid(year_join ~ .)
+```
+
+While this is correct, it is gross. We want a *smoother* curve.
+
+Get daily proportions by origin, and multiply by CPUE. Each curve integrates to 1, **does not** show the relative abundance, but rather the run timing for each group.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2013) |> 
+  dplyr::count(year_join, date, origin) |> 
+  dplyr::group_by(year_join, date) |> 
+  dplyr::mutate(p = n / sum(n)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = CPUE_mod, by = dplyr::join_by(date)) |> 
+  dplyr::mutate(origin_cpue = p * avg_pink_cpue) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin, weight = origin_cpue)) +
+  ggplot2::geom_density(lwd = 2, adjust = 1) +
+  ggplot2::xlim(lubridate::as_date(c("2013-05-15", "2013-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Relative Run Timing by Origin in 2013",
+                x = "Julian Date",
+                y = "Relative Density",
+                colour = "Origin") +
+  ggplot2::facet_grid(year_join ~ .)
+```
+
+Get daily proportions by origin, and multiply by CPUE. Each curve **does** show the relative abundance and run timing for each group.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2013) |> 
+  dplyr::count(year_join, date, origin) |> 
+  dplyr::group_by(year_join, date) |> 
+  dplyr::mutate(p = n / sum(n)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = CPUE_mod, by = dplyr::join_by(date)) |> 
+  dplyr::mutate(origin_cpue = p * avg_pink_cpue) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin, weight = origin_cpue)) +
+  ggplot2::geom_density(ggplot2::aes(y = ggplot2::after_stat(wdensity)),
+                        lwd = 2, adjust = 1) +
+  ggplot2::xlim(lubridate::as_date(c("2013-05-15", "2013-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Absolute Run Timing by Origin in 2013",
+                x = "Julian Date",
+                y = "Absolute Density",
+                colour = "Origin") +
+  ggplot2::facet_grid(year_join ~ .)
+
+ggplot2::ggsave(filename = "../output/ocean_test_fishery_run_timing_2013.png", width = 10, height = 6, units = "in")
+```
+
+Get daily proportions by origin, and multiply by CPUE. Each curve **does** show the relative abundance and run timing for each group.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2014) |> 
+  dplyr::count(year_join, date, origin) |> 
+  dplyr::group_by(year_join, date) |> 
+  dplyr::mutate(p = n / sum(n)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = CPUE_mod, by = dplyr::join_by(date)) |> 
+  dplyr::mutate(origin_cpue = p * avg_pink_cpue) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin, weight = origin_cpue)) +
+  ggplot2::geom_density(ggplot2::aes(y = ggplot2::after_stat(wdensity)),
+                        lwd = 2, adjust = 1) +
+  ggplot2::xlim(lubridate::as_date(c("2014-05-15", "2014-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Absolute Run Timing by Origin in 2014",
+                x = "Julian Date",
+                y = "Absolute Density",
+                colour = "Origin") +
+  ggplot2::facet_grid(year_join ~ .)
+
+ggplot2::ggsave(filename = "../output/ocean_test_fishery_run_timing_2014.png", width = 10, height = 6, units = "in")
+```
+
+Get daily proportions by origin, and multiply by CPUE. Each curve **does** show the relative abundance and run timing for each group.
+```{r}
+ocean_join |> 
+  dplyr::filter(!is.na(origin),
+                year_join == 2015) |> 
+  dplyr::count(year_join, date, origin) |> 
+  dplyr::group_by(year_join, date) |> 
+  dplyr::mutate(p = n / sum(n)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = CPUE_mod, by = dplyr::join_by(date)) |> 
+  dplyr::mutate(origin_cpue = p * avg_pink_cpue) |> 
+  ggplot2::ggplot(ggplot2::aes(x = date, colour = origin, weight = origin_cpue)) +
+  ggplot2::geom_density(ggplot2::aes(y = ggplot2::after_stat(wdensity)),
+                        lwd = 2, adjust = 1) +
+  ggplot2::xlim(lubridate::as_date(c("2015-05-15", "2015-09-01"))) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Ocean Sampling Absolute Run Timing by Origin in 2015",
+                x = "Julian Date",
+                y = "Absolute Density",
+                colour = "Origin") +
+  ggplot2::facet_grid(year_join ~ .)
+
+ggplot2::ggsave(filename = "../output/ocean_test_fishery_run_timing_2015.png", width = 10, height = 6, units = "in")
+```
+
+### Save Data
+
+Need to save the 2014-2015 otolith data so Eric Lardizabal can upate the HWI Ocean Report [website](https://mtalab.adfg.alaska.gov/Hatchery_Wild_Interaction/HWIReports.aspx). I am choosing to overwrite the existing 2013 data, but there were only those few discrepancies.
+```{r}
+ocean_save <- ocean_join |> 
+  dplyr::select(-c(mark_id, mark_present, hatchery)) |>  # remove the original columns since they only have 2013 data
+  dplyr::rename(mark_id = mark_id_join,
+                mark_present = mark_present_join,
+                hatchery = hatchery_join) |>  # rename the join columns with otolith data for all 3 years, 2013-2015
+  dplyr::select(names(ocean))  # get the columns in the correct order
+```
+
+Confirm that otolith data is there for all years.
+```{r}
+ocean_save |> 
+  dplyr::count(year, mark_present)
+```
+
+Write it out!
+```{r}
+readr::write_csv(x = ocean_save, file = "../data/run_timing/Ocean Report-560_modified.csv")
+```
+
+## Aerial
+
+### Join 2024-2026 Data
+
+Join in the raw data from 2024-2026 to the existing 1962-2023 data.
+```{r}
+# glimpse(aerial)
+# glimpse(aerial_2024_2026)
+
+# just keep the pink salmon stream counts, that's all we need for escapement
+aerial_mod <- aerial |>
+  dplyr::rename(
+    survey_date = date,
+    subdistrict = stat_area,
+    stream_num = strnum,
+    stream_name = strname
+  ) |>
+  dplyr::mutate(
+    observer = paste(first, last_2),
+    species = "Pink",
+    count_type = "Stream",
+    count = pstream
+  ) |> 
+  dplyr::select(
+    year,
+    lineage,
+    survey_date,
+    stat_week,
+    julian_day,
+    district,
+    subdistrict,
+    stream_num,
+    stream_name,
+    observer,
+    species,
+    count_type,
+    count
+  )
+
+aerial_2024_2026_mod <- aerial_2024_2026 |> 
+  dplyr::mutate(year = lubridate::year(survey_date),
+                lineage = dplyr::case_when(year %% 2 == 0 ~ "Even",
+                                 year %% 2 == 1 ~ "Odd",
+                                 TRUE ~ NA_character_),
+                julian_day = lubridate::yday(survey_date),
+                subdistrict = as.numeric(stringr::str_sub(string = stat_area, start = -2, end = -1)),
+                stream_num = stream
+                ) |> 
+  dplyr::filter(species == "Pink",
+                count_type == "Stream") |> 
+  dplyr::select(
+    year,
+    lineage,
+    survey_date,
+    stat_week,
+    julian_day,
+    district,
+    subdistrict,
+    stream_num,
+    stream_name,
+    observer,
+    species,
+    count_type,
+    count
+  )
+
+(
+  aerial_1962_2026 <- dplyr::bind_rows(aerial_mod, aerial_2024_2026_mod) |>
+    dplyr::arrange(year, district, subdistrict, stream_num, survey_date)
+)
+
+rm(aerial, aerial_2024_2026, aerial_mod, aerial_2024_2026_mod)
+```
+
+### 134 Index Streams
+
+The aerial survey program was reduced to 134 index streams starting in 2015. For a true apples-to-apples comparison, I'm going to limit the historical data to these 134 streams as well. They are listed in Appendix A1 of [Morella and Scannell 2024](https://www.adfg.alaska.gov/FedAidPDFs/ROP.CF.2A.2024.04.pdf), but it doesn't include the stream number. I'm going to see if I can figure it out based on which streams were surveyed in recent years.
+```{r}
+aerial_1962_2026 |> 
+  dplyr::filter(year >= 2015) |>  # just the reduced set of 134 index streams
+  dplyr::count(district, subdistrict, stream_num, stream_name) |> 
+  ggplot2::ggplot(ggplot2::aes(x = n)) +
+  ggplot2::geom_histogram(binwidth = 1) + 
+  ggplot2::geom_vline(xintercept = 25, colour = "red", lwd = 1) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(x = "Total Stream Visits 2015-2026", y = "Count of Streams", title = "Number of Stream Visits per Stream 2015-2026")
+```
+
+It looks like 25 might be a reasonable cutoff, how many total streams will that leave us with?
+```{r}
+aerial_1962_2026 |> 
+  dplyr::filter(year >= 2015) |>  # just the reduced set of 134 index streams
+  dplyr::count(district, subdistrict, stream_num, stream_name) |> 
+  dplyr::filter(n > 25) |> 
+  dplyr::arrange(district, subdistrict, stream_num)
+```
+
+Perfect, this gives us exactly 134 streams. Hopefully, these are the correct index streams!
+
+How many total surveys per year? Curious if there were notably fewer in 1964, 1989, or 1990.
+```{r}
+aerial_1962_2026 |> 
+  dplyr::count(year) |> 
+  dplyr::arrange(n)
+```
+
+Quick-n-dirty, assume the streams w/ >25 visits are correct.
+```{r}
+# get 134 index streams
+index_streams <- aerial_1962_2026 |> 
+  dplyr::filter(year >= 2015) |>  # just the reduced set of 134 index streams
+  dplyr::count(district, subdistrict, stream_num, stream_name) |> 
+  dplyr::filter(n > 25) |> 
+  dplyr::select(district, subdistrict, stream_num, stream_name)
+```
+
+### Annual x District
+
+Get total annual escapement by district.
+```{r}
+# annual cumulative escapement by district
+annual_district <- aerial_1962_2026 |> 
+  dplyr::filter(stream_num %in% index_streams$stream_num,  # only index streams
+                !year %in% c(1964, 1989, 1990),  # drop years for earthquake, Exxon Valdez
+                count_type == "Stream",  # only stream counts are escapement
+                species == "Pink",
+                district %in% 221:228  # ditch Unakwik (229)
+                ) |>
+  dplyr::group_by(lineage, year, district) |> 
+  dplyr::summarise(escapement_annual = sum(count, na.rm = TRUE), .groups = "drop")
+
+# plot
+annual_district |> 
+  ggplot2::ggplot(ggplot2::aes(x = year, y = escapement_annual)) +
+  ggplot2::geom_col() +
+  ggplot2::theme_bw() +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  ggplot2::facet_grid(lineage ~ district)
+```
+
+### Daily x District
+
+Get daily cumulative escapement by district, fill in unsurveyed days from first to last day surveyed across full dataset. Then calculate the daily proportion of escapement by district and cumulative proportion of escapement by district for each year.
+```{r}
+# daily cumulative escapement by district
+daily_district <- aerial_1962_2026 |> 
+  dplyr::filter(stream_num %in% index_streams$stream_num,  # only index streams
+                !year %in% c(1964, 1989, 1990),  # drop years for earthquake, Exxon Valdez
+                count_type == "Stream",  # only stream counts are escapement
+                species == "Pink",
+                district %in% 221:228  # ditch Unakwik (229)
+                ) |>
+  dplyr::group_by(lineage, year, district, julian_day) |> 
+  dplyr::summarise(escapement_daily = sum(count, na.rm = TRUE), .groups = "drop_last") |> 
+  tidyr::complete(julian_day = seq(min(aerial_1962_2026$julian_day), max(aerial_1962_2026$julian_day)),  # fill in unsurveyed days w/ 0
+                  fill = list(escapement_daily = 0)) |> 
+  dplyr::arrange(julian_day, .by_group = TRUE) |> 
+  dplyr::mutate(escapement_cumulative = cumsum(escapement_daily)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = annual_district, by = dplyr::join_by(lineage, year, district)) |> 
+  dplyr::mutate(p_daily = escapement_daily / escapement_annual,
+                p_cumulative = escapement_cumulative / escapement_annual)
+```
+
+Check to make sure working as intended.
+```{r}
+# Cumulative
+daily_district |> 
+  dplyr::filter(year == 1992) |> 
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative)) +
+  ggplot2::geom_line() +
+  ggplot2::theme_bw() +
+  ggplot2::facet_wrap(~ district) +
+  ggplot2::labs(x = "Julian Day", y = "Proportion of Cumulative Escapement", title = "Cumulative Proportion of Escapement by District, 1992")
+
+# Daily
+daily_district |> 
+  dplyr::filter(year == 1992,
+                p_daily > 0) |> 
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_daily)) +
+  ggplot2::geom_line() +
+  ggplot2::theme_bw() +
+  ggplot2::facet_wrap(~ district) +
+  ggplot2::labs(x = "Julian Day", y = "Proportion of Daily Escapement", title = "Daily Proportion of Escapement by District, 1992")
+```
+
+### Average Timing
+
+```{r}
+mean_district <- daily_district |> 
+  dplyr::filter(escapement_annual > 0) |> 
+  dplyr::group_by(lineage, district, julian_day) |> 
+  dplyr::summarise(p_daily = mean(p_daily),
+                   p_cumulative = mean(p_cumulative),
+                   n_years = dplyr::n_distinct(year),
+                   .groups = "drop")
+
+# Cumulative
+mean_district |>
+  dplyr::mutate(district = as.character(district)) |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative, colour = district)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day",
+    y = "Proportion of Cumulative Escapement",
+    title = "Cumulative Proportion of Escapement by District",
+    colour = "District"
+  )
+
+# Daily
+mean_district |>
+  dplyr::mutate(district = as.character(district)) |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_daily, colour = district)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day",
+    y = "Proportion of Cumulative Escapement",
+    title = "Cumulative Proportion of Escapement by District",
+    colour = "District"
+  )
+```
+
+Try smoothing.
+```{r}
+# Cumulative
+mean_district |>
+  dplyr::mutate(district = as.character(district)) |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative, colour = district)) +
+  ggplot2::geom_smooth(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day",
+    y = "Proportion of Cumulative Escapement",
+    title = "Cumulative Proportion of Escapement by District",
+    colour = "District"
+  )
+```
+
+Nope, I do not like `geom_smooth`, since this introduces an "S" shape as opposed to the expected logarithmic curve.
+
+Try a 14-day moving average.
+```{r}
+mean_district %>%
+  dplyr::group_by(lineage, district) %>%
+  dplyr::arrange(julian_day, .by_group = TRUE) %>%
+  dplyr::mutate(
+    p_cumulative_smoothed = slider::slide_dbl(
+      p_cumulative,
+      mean,
+      .before = 7,
+      .after = 7,
+      .complete = FALSE
+    )
+  ) %>%
+  dplyr::ungroup() |>
+  dplyr::mutate(district = as.character(district)) |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative_smoothed, colour = district)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day", 
+    y = "Proportion of Cumulative Escapement", 
+    title = "Cumulative Proportion of Escapement by District, 1962-2026 (14-day Moving Average)",
+    colour = "District"
+  )
+
+ggplot2::ggsave(filename = "../output/escapement_run_timing_by_district.png", width = 10, height = 6, units = "in")
+```
+
+### Sound-wide
+
+Get total annual escapement for all of PWS.
+```{r}
+# annual cumulative escapement by district
+annual_pws <- aerial_1962_2026 |> 
+  dplyr::filter(stream_num %in% index_streams$stream_num,  # only index streams
+                !year %in% c(1964, 1989, 1990),  # drop years for earthquake, Exxon Valdez
+                count_type == "Stream",  # only stream counts are escapement
+                species == "Pink",
+                district %in% 221:228  # ditch Unakwik (229)
+                ) |>
+  dplyr::group_by(lineage, year) |> 
+  dplyr::summarise(escapement_annual = sum(count, na.rm = TRUE), .groups = "drop")
+
+# plot
+annual_pws |> 
+  ggplot2::ggplot(ggplot2::aes(x = year, y = escapement_annual)) +
+  ggplot2::geom_col() +
+  ggplot2::theme_bw() +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  ggplot2::facet_grid(lineage ~ .)
+```
+
+Get daily cumulative escapement for all of PWS, fill in unsurveyed days from first to last day surveyed across full dataset. Then calculate the daily proportion of escapement and cumulative proportion of escapement for each year.
+```{r}
+# daily cumulative escapement for all of PWS
+daily_pws <- aerial_1962_2026 |> 
+  dplyr::filter(stream_num %in% index_streams$stream_num,  # only index streams
+                !year %in% c(1964, 1989, 1990),  # drop years for earthquake, Exxon Valdez
+                count_type == "Stream",  # only stream counts are escapement
+                species == "Pink",
+                district %in% 221:228  # ditch Unakwik (229)
+                ) |>
+  dplyr::group_by(lineage, year, julian_day) |> 
+  dplyr::summarise(escapement_daily = sum(count, na.rm = TRUE), .groups = "drop_last") |> 
+  tidyr::complete(julian_day = seq(min(aerial_1962_2026$julian_day), max(aerial_1962_2026$julian_day)),  # fill in unsurveyed days w/ 0
+                  fill = list(escapement_daily = 0)) |> 
+  dplyr::arrange(julian_day, .by_group = TRUE) |> 
+  dplyr::mutate(escapement_cumulative = cumsum(escapement_daily)) |> 
+  dplyr::ungroup() |> 
+  dplyr::left_join(y = annual_pws, by = dplyr::join_by(lineage, year)) |> 
+  dplyr::mutate(p_daily = escapement_daily / escapement_annual,
+                p_cumulative = escapement_cumulative / escapement_annual)
+```
+
+Average run timing by lineage for all PWS.
+```{r}
+mean_pws <- daily_pws |> 
+  dplyr::filter(escapement_annual > 0) |> 
+  dplyr::group_by(lineage, julian_day) |> 
+  dplyr::summarise(p_daily = mean(p_daily),
+                   p_cumulative = mean(p_cumulative),
+                   n_years = dplyr::n_distinct(year),
+                   .groups = "drop")
+
+# Cumulative
+mean_pws |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day",
+    y = "Proportion of Cumulative Escapement",
+    title = "Cumulative Proportion of Escapement by District"
+  )
+```
+
+Try a 14-day moving average.
+```{r}
+mean_pws %>%
+  dplyr::group_by(lineage) %>%
+  dplyr::arrange(julian_day, .by_group = TRUE) %>%
+  dplyr::mutate(
+    p_cumulative_smoothed = slider::slide_dbl(
+      p_cumulative,
+      mean,
+      .before = 7,
+      .after = 7,
+      .complete = FALSE
+    )
+  ) %>%
+  dplyr::ungroup() |>
+  ggplot2::ggplot(ggplot2::aes(x = julian_day, y = p_cumulative_smoothed)) +
+  ggplot2::geom_line(lwd = 1) +
+  ggplot2::xlim(c(175, 275)) +
+  ggplot2::theme_bw() +
+  ggplot2::facet_grid(lineage ~ .) +
+  ggplot2::labs(
+    x = "Julian Day", 
+    y = "Proportion of Cumulative Escapement", 
+    title = "Cumulative Proportion of Escapement for all PWS, 1962-2026 (14-day Moving Average)"
+  )
+
+ggplot2::ggsave(filename = "../output/escapement_run_timing_all_pws.png", width = 10, height = 6, units = "in")
+```
+
+### Save Data
+
+```{r}
+# district data w/ smoothing
+mean_district %>%
+  dplyr::group_by(lineage, district) %>%
+  dplyr::arrange(julian_day, .by_group = TRUE) %>%
+  dplyr::mutate(
+    p_cumulative_smoothed = slider::slide_dbl(
+      p_cumulative,
+      mean,
+      .before = 7,
+      .after = 7,
+      .complete = FALSE
+    )
+  ) %>%
+  dplyr::ungroup() |> 
+  readr::write_csv(file = "../output/escapement_run_timing_by_district.csv")
+
+# pws data w/ smoothing
+mean_pws %>%
+  dplyr::group_by(lineage) %>%
+  dplyr::arrange(julian_day, .by_group = TRUE) %>%
+  dplyr::mutate(
+    p_cumulative_smoothed = slider::slide_dbl(
+      p_cumulative,
+      mean,
+      .before = 7,
+      .after = 7,
+      .complete = FALSE
+    )
+  ) %>%
+  dplyr::ungroup() |> 
+  readr::write_csv(file = "../output/escapement_run_timing_all_pws.csv")
+```
+
+End
